@@ -14,15 +14,6 @@
   <img src="./docs/demo.gif" alt="30-second Agent Relay demo from agent-managed Skill installation to project status report" width="900">
 </p>
 
-<p align="center"><strong>Recommended: send this message directly to your agent</strong></p>
-
-```text
-Install and enable
-Agent Relay in this project
-GitHub:
-chopperH0824/agent-relay
-```
-
 <p align="center">
   <a href="https://github.com/chopperH0824/agent-relay/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/chopperH0824/agent-relay/actions/workflows/ci.yml/badge.svg"></a>
   <a href="https://github.com/chopperH0824/agent-relay/releases/latest"><img alt="Release" src="https://img.shields.io/github/v/release/chopperH0824/agent-relay"></a>
@@ -35,24 +26,25 @@ chopperH0824/agent-relay
 
 ## Quick Start
 
-Send the message above to an agent with Shell and network access inside the target project. It reviews the Skill, identifies the current Harness, performs the installation, and previews the project initialization scope; you only confirm the file changes it presents.
+Send this to your agent:
 
-Continue requesting work normally after initialization. For a status update, just ask:
+```text
+Install and enable Agent Relay in this project: https://github.com/chopperH0824/agent-relay
+```
 
-> **Where does this project stand?**
-
-<details>
-<summary><strong>Manual fallback when the agent cannot install Skills</strong></summary>
+Or install it yourself:
 
 ```bash
 npx skills add chopperH0824/agent-relay --skill agent-relay
 ```
 
-Then tell the agent:
+After a manual install, tell the agent:
 
 > **Enable Agent Relay**
 
-</details>
+The agent reviews the Skill, identifies the current Harness, and previews the files it will write; you confirm once, then it initializes the project and runs its health check. Continue requesting work normally afterward. For a status update, just ask:
+
+> **Where does this project stand?**
 
 ## Good Fit / Poor Fit
 
@@ -122,16 +114,7 @@ Agent Relay is not a daemon. It does not continuously consume CPU or listen on a
 
 ### Option A (recommended): let the agent install it
 
-Send this inside the target project:
-
-```text
-Install and enable
-Agent Relay in this project
-GitHub:
-chopperH0824/agent-relay
-```
-
-The agent should review [`SKILL.md`](./skills/agent-relay/SKILL.md) and the runtime before selecting the project-level entry for the current Harness. When it knows the Harness ID, it may add `--agent <id> --copy --yes` to `npx skills`; when detection is uncertain, it should preserve the installer's selection step instead of guessing a target directory.
+Use the message in [Quick Start](#quick-start). The agent should review [`SKILL.md`](./skills/agent-relay/SKILL.md) and the runtime before selecting the project-level entry for the current Harness. When it knows the Harness ID, it may add `--agent <id> --copy --yes` to `npx skills`; when detection is uncertain, it should preserve the installer's selection step instead of guessing a target directory.
 
 This message explicitly authorizes installing Agent Relay, but the Harness may still request Shell-command approval. Project writes after installation still require Relay's dry-run and one confirmation; automatic installation does not bypass them.
 

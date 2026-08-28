@@ -6,7 +6,7 @@ All notable changes to Agent Relay are documented here. The project follows [Sem
 
 ### Changed
 
-- Made a single copyable request for the agent to install and enable Agent Relay the primary Quick Start; the manual `npx` command is now a collapsed fallback.
+- Made a single one-line request for the agent to install and enable Agent Relay the primary Quick Start, with the manual `npx` command immediately after it.
 - Updated Skill discovery and continuation rules so an agent that just installed the Skill proceeds into project setup without asking the user to repeat the request.
 - Simplified the bilingual Quick Start and demo; status can be requested in natural language without remembering Relay commands.
 
