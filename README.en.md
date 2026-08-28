@@ -314,19 +314,14 @@ Recommended data boundary:
 ## Daily workflow
 
 ```mermaid
-flowchart TD
-    A[Read HANDOFF automatically] --> B{Claimable task exists?}
-    B -- Yes --> C[Claim task and write scope]
-    B -- No --> D[Create a task from the current request]
-    D --> C
-    C --> E{Current harness has required capabilities?}
-    E -- Yes --> F[Execute and verify]
-    E -- No --> G[Explain missing capability, alternative, and tradeoff]
-    G --> H{User accepts the alternative?}
-    H -- Yes --> F
-    H -- No --> I[Record blocker and stop]
-    F --> J[Write a concise event]
-    J --> K[Update goals, task state, and HANDOFF]
+flowchart LR
+    A[Read HANDOFF] --> B[Create or claim a task]
+    B --> C{Capabilities sufficient?}
+    C -- Yes --> D[Execute and verify]
+    C -- No --> E[Explain the gap and confirm an alternative]
+    E -- Accepted --> D
+    E -- Rejected --> F[Record the blocker]
+    D --> G[Record the result and refresh HANDOFF]
 ```
 
 Each event contains operational facts only: problem summary, actions, changed files, verification, remaining work, and the next step. It must not contain hidden chain-of-thought.
