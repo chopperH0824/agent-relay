@@ -4,16 +4,17 @@
 
 Agent Relay 是一个**只需执行一次的项目安装 Skill**。
 
-安装完成后，能力由项目中的常驻入口、运行脚本和状态文件维持。以后无论由 Codex、Pi、Claude Code、Cursor、Gemini、Copilot、Cline 或其他 Agent 接手，都不需要用户再次主动触发 Skill。
+安装完成后，能力由项目中的常驻入口、运行脚本和状态文件维持。以后无论由 Codex、Pi、Claude Code、Cursor、Gemini、Copilot、Qoder、TRAE、CodeBuddy、Qwen Code、Kimi Code CLI 或其他 Agent 接手，都不需要用户再次主动触发 Skill。
 
 > Skill 负责安装，项目自己负责长期运行。
 
-## 只保留四项能力
+## 只保留五项能力
 
 | 能力 | 自动行为 | 解决的问题 |
 | --- | --- | --- |
 | 自动接手 | 新 Agent 先读交接总览，再开始工作 | 不知道上一个 Agent 做到哪里 |
 | 自动记录 | 完成任务后记录目标、动作、结果和下一步 | 对话切换后丢失上下文 |
+| 快速汇报 | `relay report` 输出固定格式的当前情况 | 临时询问时需要翻阅全部历史 |
 | 自动封版 | 识别明确的定版意图，保存不可变版本 | 后续修改覆盖已交付成果 |
 | 自动协调 | 任务认领、文件避让、环境能力对比 | 多 Agent 冲突或工具无法复用 |
 
@@ -82,6 +83,29 @@ flowchart TD
     J --> K[更新目标、任务和 HANDOFF]
 ```
 
+## 快速状态汇报
+
+当用户询问“现在什么情况”“做到哪了”或“检查 agent-relay”时，Agent 运行只读命令：
+
+```text
+relay report              8–10 行快速汇报
+relay report --full       展开目标、任务、版本和环境差异
+relay report --json       给 Hook、MCP、脚本或其他 Agent 使用
+```
+
+默认报告包含健康状态、项目目标、当前任务、最近完成、版本状态、当前环境、阻塞风险、下一步和更新时间。`report` 不认领任务、不刷新租约、不创建事件，也不修改 `HANDOFF.md`。
+
+```mermaid
+flowchart LR
+    A[读取规范状态] --> B[检查新鲜度与一致性]
+    B --> C{状态健康?}
+    C -- 是 --> D[输出快速报告]
+    C -- 否 --> E[标记 degraded / stale]
+    E --> D
+```
+
+`report` 回答“现在是什么情况”，`status` 展示底层状态，`doctor` 检查安装与 Harness 入口。
+
 ## 定版流程
 
 只有明确表达“现在可以交付”的语义才自动封版，不能只按单个关键词机械判断。
@@ -127,6 +151,17 @@ flowchart LR
 | 需要同时改同一模块 | 推荐独立 Git worktree 后合并 |
 | 只读取同一文件 | 允许并行 |
 
+## Harness 兼容分级
+
+| 等级 | 代表产品 | 接入方式 |
+| --- | --- | --- |
+| A：官方机制已核实 | Codex、Claude Code、Cursor、Copilot、Gemini CLI、Qoder、Qoder CN、TRAE Code、TraeWork、CodeBuddy、Qwen Code、Kimi Code CLI、OpenCode、Cline、Pi | 官方 `SKILL.md`、`AGENTS.md` 或常驻项目规则 |
+| B：标准生态待实测 | Windsurf、Roo、Kilo、Continue、Aider、Amp、Factory Droid、Kiro、Junie、Goose、OpenHands、Devin、Warp、Zed、Jules、Antigravity | 生成标准 Skill/AGENTS 入口，再由 `doctor` 验证 |
+| C：桥接适配 | 腾讯 WorkBuddy、通义灵码 IDE | 转换为产品自定义 Skill 或手动导入流程 |
+| D：待研究 | 文心快码、CodeGeeX、CodeArts Snap、Fitten Code、iFlyCode | 只提供手动交接提示，不声称自动加载 |
+
+WorkBuddy 公开的自定义 Skill 以 `skill.yml` 为主，TraeWork 则原生使用 `SKILL.md`；两者必须采用不同适配器。办公 Agent 还必须记录授权文件夹及本地/云端运行环境，不能默认扫描项目外文件。
+
 ## 环境记录也做简化
 
 每次动作只引用一个环境快照 ID，不重复记录整台电脑。只有环境变化时才创建新快照。
@@ -160,9 +195,10 @@ flowchart LR
 relay init       安装项目常驻能力
 relay start      读取环境、创建或认领任务
 relay finish     记录结果并刷新交接
+relay report     只读快速汇报当前情况
 relay seal       创建不可变版本
 relay status     查看任务、冲突和最近动作
 relay doctor     验证各 Harness 入口是否有效
 ```
 
-所有自动行为最终都调用这六个稳定动作。以后即使增加 Hook、MCP 或可视化界面，也不改变底层数据协议。
+所有自动行为最终都调用这七个稳定动作。以后即使增加 Hook、MCP 或可视化界面，也不改变底层数据协议。

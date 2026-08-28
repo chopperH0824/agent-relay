@@ -5,7 +5,7 @@
 <h1 align="center">Agent Relay</h1>
 
 <p align="center">
-  Install once. Keep durable project handoffs, version history, and multi-agent coordination inside the project.
+  Install once. Keep durable project handoffs, instant status reports, version history, and multi-agent coordination inside the project.
 </p>
 
 <p align="center">
@@ -28,7 +28,7 @@ Agent Relay is not meant to be a Skill that users must remember to invoke in eve
 ## Contents
 
 - [What Agent Relay solves](#what-agent-relay-solves)
-- [Four core capabilities](#four-core-capabilities)
+- [Five core capabilities](#five-core-capabilities)
 - [How one initialization remains active](#how-one-initialization-remains-active)
 - [Installation and first initialization](#installation-and-first-initialization)
 - [What to do after initialization](#what-to-do-after-initialization)
@@ -36,6 +36,7 @@ Agent Relay is not meant to be a Skill that users must remember to invoke in eve
 - [What it does not do](#what-it-does-not-do)
 - [Project file layout](#project-file-layout)
 - [Daily workflow](#daily-workflow)
+- [Quick status report](#quick-status-report)
 - [Goals, actions, versions, and environments](#goals-actions-versions-and-environments)
 - [Multi-agent coordination](#multi-agent-coordination)
 - [Harness compatibility](#harness-compatibility)
@@ -61,12 +62,13 @@ Agent Relay maintains a small, explicit handoff layer inside the project so the 
 
 Historical goals are reminders, not mandates. **The user's current explicit request always takes priority.**
 
-## Four core capabilities
+## Five core capabilities
 
 | Capability | Automatic behavior | Purpose |
 | --- | --- | --- |
 | Automatic handoff | Read `HANDOFF.md` before starting | Understand current state, active work, and the next safe step |
 | Automatic record | Record the problem, actions, result, and verification at task end | Preserve enough operational context without copying full chats |
+| Quick status report | Generate a fixed-format summary with `relay report` | Answer “where are we now?” without reading the event history |
 | Automatic version sealing | Detect clear finalization or immediate delivery intent | Keep immutable deliverables from being overwritten by later edits |
 | Automatic coordination | Claim tasks and write scopes; compare environment capabilities | Prevent concurrent edits and identify missing tools |
 
@@ -169,9 +171,10 @@ There is no need to invoke `/agent-relay` again. A new agent should automaticall
 - append a short action event and refresh the handoff;
 - create a version copy when the user clearly finalizes or immediately sends a deliverable.
 
-The planned health checks remain available:
+The planned reporting and health commands remain available:
 
 ```bash
+python .agent-relay/relay.py report
 python .agent-relay/relay.py status
 python .agent-relay/relay.py doctor
 ```
@@ -326,6 +329,49 @@ flowchart LR
 
 Each event contains operational facts only: problem summary, actions, changed files, verification, remaining work, and the next step. It must not contain hidden chain-of-thought.
 
+## Quick status report
+
+When the user asks “give me a status report,” “where are we now?”, “check agent-relay,” or an equivalent question, the agent should not scan every historical event. It should run the read-only command:
+
+```bash
+python .agent-relay/relay.py report
+```
+
+The default report has a stable structure that an agent can relay directly:
+
+```text
+Agent Relay report
+Health: healthy / degraded / stale / uninitialized
+Project goal: explicit goal, candidate goal, or “not recorded”
+Active work: task ID, owner, progress, and write scope
+Last completed: latest result and verification
+Version state: latest sealed version, unsealed changes, and storage size
+Environment: harness, model, key capabilities, and environment changes
+Blockers: path conflicts, expired leases, missing capabilities, or “none”
+Next step: one safe action to continue
+Updated: source timestamp and event ID
+```
+
+Three output modes are planned:
+
+| Command | Output | Use |
+| --- | --- | --- |
+| `relay report` / `relay report --short` | About 8–10 Markdown lines | Fast user-facing report |
+| `relay report --full` | Expanded goals, tasks, versions, and environment differences | Handoff, review, and diagnosis |
+| `relay report --json` | Stable machine-readable object | Hooks, MCP, scripts, and other agents |
+
+`report` is side-effect free: it does not claim a task, renew a lease, create an event, or rewrite `HANDOFF.md`. It reads canonical state under `.agent-relay/` and performs lightweight consistency checks. The design target is a few seconds for a typical local project.
+
+The three inspection commands answer different questions:
+
+| Command | Question answered |
+| --- | --- |
+| `relay report` | “What is the project situation right now?” |
+| `relay status` | “What are the raw goals, tasks, versions, and leases?” |
+| `relay doctor` | “Are installation, schema, permissions, and harness adapters healthy?” |
+
+If `HANDOFF.md` is older than the latest event, a task lease has expired, a version manifest fails validation, or the current harness lacks a historical capability, the report must show `degraded` or `stale` rather than a false healthy state.
+
 ## Goals, actions, versions, and environments
 
 ### Goals
@@ -399,20 +445,78 @@ One working directory is suitable only for disjoint concurrent writes. Network f
 
 ## Harness compatibility
 
-Agent Skills and project instructions load differently across harnesses. Agent Relay uses one canonical state plus thin adapters:
+Agent Skills and project instructions load differently across harnesses. Agent Relay uses **one canonical state, thin adapters, and verification by `doctor`**. The evidence below was reviewed on **2026-08-28**. It describes the planned adapter surface, not completed end-to-end support in the current repository.
 
-| Harness / category | Planned entry point | Notes |
+### Compatibility levels
+
+| Level | Meaning |
+| --- | --- |
+| **A: official mechanism verified** | Official documentation confirms `SKILL.md`, `AGENTS.md`, or persistent project rules, so a direct adapter can be designed |
+| **B: standard ecosystem path** | Agent Skills/AGENTS.md tooling has an installation path, but Agent Relay still needs product-level tests |
+| **C: bridge adapter** | The product has custom Skills, Rules, or folder context, but uses a different format or import flow |
+| **D: research pending** | No stable public project-instruction or Skill interface was found; only manual guidance is possible |
+
+### Popular products with verified official mechanisms
+
+| Product / harness | Planned entry point | Level | Notes |
+| --- | --- | --- | --- |
+| OpenAI Codex | `AGENTS.md` + `.codex/skills/` | A | Hierarchical project instruction chain |
+| Claude Code | `CLAUDE.md` → `@AGENTS.md` + `.claude/skills/` | A | Imports preserve one source of truth |
+| Cursor | `AGENTS.md` + `.agents/skills/` / `.cursor/skills/` | A | An always-on Cursor Rule may be added |
+| GitHub Copilot / VS Code | `AGENTS.md` + `.agents/skills/` / `.github/skills/` | A | Covers IDE, CLI, and cloud-agent entry points |
+| Gemini CLI | `GEMINI.md` → `@./AGENTS.md` + `.gemini/skills/` | A | Context filenames can also be configured |
+| Qoder IDE / Qoder CLI / Qoder agent workbench, sometimes called Qoder Work | `AGENTS.md` + `.qoder/skills/` | A | Official Rules recognize `AGENTS.md`; IDE and CLI share the Skill model |
+| Qoder CN CLI, documented under Alibaba Lingma | `AGENTS.md` + `.qoder/skills/`; user Skills in `~/.qoder-cn/skills/` | A | Supports automatic and manual `SKILL.md` invocation |
+| TRAE Code | `AGENTS.md` + `.trae/skills/`; optional `.agents/skills/` | A | AGENTS and `.agents` imports must be enabled in settings |
+| TraeWork | `.trae/skills/` or uploaded `.zip` / `.skill` with root `SKILL.md` | A | Local and cloud task environments must be recorded separately |
+| Tencent CodeBuddy IDE / CodeBuddy Code CLI | `CODEBUDDY.md` + `.codebuddy/skills/` | A | `CODEBUDDY.md` is persistent; Skills load on demand |
+| Qwen Code | `.qwen/skills/` | A | Official Agent Skills; project Skills can be shared through Git |
+| Kimi Code CLI | `.agents/skills/` / `.kimi/skills/` | A | Official Agent Skills support plus Claude/Codex Skill directory compatibility |
+| OpenCode | `AGENTS.md` + `.opencode/skills/` | A | Native on-demand Agent Skills |
+| Cline | `AGENTS.md` + `.cline/skills/` / `.clinerules/` | A | Recognizes several cross-tool rule sources |
+| Pi | Project Skill + `AGENTS.md` | A | Uses Agent Skills and project instructions |
+
+### Standard-ecosystem adapter targets
+
+The following tools are present in the Agent Skills installation ecosystem or the `AGENTS.md` ecosystem. The first release will generate a standard entry point and let `relay doctor` classify it as `verified`, `partial`, or `manual`:
+
+| Product / harness | Candidate entry point | Level |
 | --- | --- | --- |
-| Codex | `AGENTS.md` | Loaded through the project instruction chain |
-| Claude Code | `CLAUDE.md` → `@AGENTS.md` | Imports the canonical instructions |
-| Cursor | `AGENTS.md` + `.cursor/rules/agent-relay.mdc` | Project rule strengthens always-on loading |
-| Gemini CLI | `GEMINI.md` → `@./AGENTS.md` | Context filenames may also be configured |
-| GitHub Copilot | `AGENTS.md`, with Copilot instructions when needed | Covers agent and review entry points |
-| Cline | `AGENTS.md` | Uses cross-tool project rules |
-| Pi | Project Skill + `AGENTS.md` | Uses Agent Skills and project instructions |
-| Other Agent Skills / AGENTS.md tools | `.agents/skills/` + `AGENTS.md` | Standard entry points; verify with `doctor` |
+| Windsurf / Cascade | `AGENTS.md` + `.windsurf/skills/` / rules | B |
+| Roo Code | `AGENTS.md` + `.roo/skills/` | B |
+| Kilo Code | `AGENTS.md` + `.kilocode/skills/` | B |
+| Continue | `.continue/skills/` + Continue Rules | B |
+| Aider | `AGENTS.md` configured through `read` | B |
+| Amp | `AGENTS.md` + `.agents/skills/` | B |
+| Factory Droid | `AGENTS.md` + `.factory/skills/` | B |
+| Amazon Kiro / Kiro CLI | `.kiro/skills/` + agent resources | B |
+| JetBrains Junie | `AGENTS.md` + `.junie/skills/` | B |
+| Goose | `AGENTS.md` + `.goose/skills/` | B |
+| OpenHands | `.openhands/skills/` + project instructions | B |
+| Devin | `AGENTS.md` + Knowledge / Skills | B |
+| Warp | `AGENTS.md` / project rules | B |
+| Zed | `AGENTS.md` / Agent Rules | B |
+| Augment Code | `AGENTS.md` | B |
+| Google Jules | `AGENTS.md` | B |
+| Google Antigravity | `.agent/skills/` + project rules | B |
 
-Compatibility means an adapter path exists. It does not mean project files override system or organization policy. System instructions, managed policy, and the user's current explicit request remain higher priority.
+### Bridge scope for Chinese office and development agents
+
+| Product | Verified official mechanism | Level | Agent Relay plan |
+| --- | --- | --- | --- |
+| Tencent WorkBuddy | Custom Skills use `skill.yml`, implementation files, and a README; authorized folders can be operated on | C | Generate a WorkBuddy bridge Skill that calls `relay report --json` read-only and requests explicit project-folder authorization |
+| Alibaba Lingma IDE | Coding-agent and rules features; Qoder CN CLI has documented `SKILL.md` support | C | Detect the IDE separately from Qoder CN CLI so paths are not reused incorrectly |
+| Baidu Comate | Public product includes agent and codebase capabilities, but no stable public Agent Skills/AGENTS interface was found | D | Generate manual handoff guidance only until an official interface is verified |
+| Zhipu CodeGeeX | Code-agent capabilities are public, but no standard project Skill directory was verified | D | Use manual project instructions without claiming automatic loading |
+| Huawei CodeArts Snap | Development-assistant capabilities exist, but no general Skill/AGENTS interface was verified | D | Stay in manual mode and report the limitation through `doctor` |
+| Fitten Code | IDE agent capabilities exist; no general project-rule interface was verified | D | Stay in manual mode |
+| iFlyCode / iFlytek coding assistant | Coding-assistant capabilities exist; no general project-rule interface was verified | D | Stay in manual mode |
+
+Office agents such as WorkBuddy and TraeWork can process documents, spreadsheets, presentations, and local folders. Their adapters must record which folder was authorized and whether execution is local or cloud-based. They must not silently include personal files outside the project.
+
+Compatibility appears in `relay report`: detected harness, active entry point, last verification time, compatibility level, and missing capabilities. Level `A` means an official mechanism exists; it does not mean Agent Relay has already passed implementation tests for that product.
+
+Compatibility also does not let project files override system or organization policy. System instructions, managed policy, and the user's current explicit request remain higher priority.
 
 ## Privacy and security
 
@@ -440,6 +544,7 @@ Any Skill can instruct an agent to run commands. Review its source, `SKILL.md`, 
 | `relay start` | Capture the session environment and create or claim a task |
 | `relay checkpoint` | Record a safe handoff point in long work |
 | `relay finish` | Record the outcome, release the task, and refresh handoff |
+| `relay report [--short\|--full\|--json]` | Generate a read-only current-state report |
 | `relay seal` | Create an immutable version and its history |
 | `relay status` | Show goals, tasks, conflicts, versions, and recent actions |
 | `relay doctor` | Validate adapters, schema, permissions, and harness discovery |
@@ -477,6 +582,7 @@ Removing the global Skill does not alter already initialized projects. Each proj
 ## Limitations
 
 - Project instructions are model context, not system-level enforcement; adherence can differ between models.
+- Level `A` in the compatibility matrix means an official entry point was verified, not that Agent Relay has completed implementation and regression tests for that harness.
 - Some harnesses need lifecycle hooks for deterministic start/stop actions. Hooks will be optional enhancements, not silent global modifications.
 - Agent Relay cannot universally read private conversation histories across Codex, Claude, Cursor, and other products.
 - Inaccessible information must remain unknown; it must not be invented.
@@ -490,6 +596,10 @@ Removing the global Skill does not alter already initialized projects. Each proj
 ### Must I invoke the Skill in every session?
 
 No. Initialization leaves entry points and a runtime in the project. Future harnesses load the project instructions and the agent invokes the project-local runtime.
+
+### How can an agent report the current situation quickly?
+
+Say “give me a status report” or “check agent-relay.” The agent should run `relay report` and relay the fixed-format summary. It does not need to read the full event history, and reporting does not claim a task or modify state.
 
 ### Does it run continuously in the background?
 
@@ -532,12 +642,14 @@ No. Only approved names, versions, paths, and fingerprints are retained. Secret 
 - [x] Simplified architecture and data boundaries
 - [x] Desktop and mobile visual documentation
 - [x] Bilingual GitHub README
+- [x] Quick-report protocol and expanded harness compatibility matrix
 - [ ] Agent Skills-compliant `SKILL.md`
 - [ ] Idempotent installer, dry-run, backups, and uninstall
 - [ ] File-based events, task leases, and path conflict detection
-- [ ] Goals, environment snapshots, and capability negotiation
+- [ ] Goals, environment snapshots, capability negotiation, and `relay report`
 - [ ] Immutable version sealing and checksum verification
-- [ ] Adapter tests for Codex, Claude Code, Cursor, Gemini, Copilot, Cline, and Pi
+- [ ] Adapter tests for major international harnesses
+- [ ] Dedicated tests for Qoder, Qoder CN, TRAE Code, TraeWork, CodeBuddy, WorkBuddy, Qwen Code, and Kimi Code CLI
 - [ ] Unit tests, failure recovery tests, and the first `v0.1.0` release
 
 ## Documentation
@@ -547,6 +659,10 @@ No. Only approved names, versions, paths, and fingerprints are retained. Secret 
 - [Agent Skills Specification](https://agentskills.io/specification)
 - [AGENTS.md](https://agents.md/)
 - [skills CLI](https://github.com/antfu/skills-cli)
+- [Qoder Rules](https://docs.qoder.com/user-guide/rules) · [Qoder Skills](https://docs.qoder.com/extensions/skills) · [Qoder CN Skills](https://help.aliyun.com/zh/lingma/qoder-cn/user-guide/skills)
+- [TRAE Code Skills](https://docs.trae.ai/ide/skills) · [TRAE Code Rules](https://docs.trae.ai/ide/rules?ref) · [TraeWork Skills](https://docs.trae.ai/solo/skills?_lang)
+- [CodeBuddy Skills](https://www.codebuddy.ai/docs/ide/Features/Skills) · [CodeBuddy Best Practices](https://www.codebuddy.ai/docs/cli/best-practices) · [WorkBuddy Custom Skills](https://www.workbuddy.ai/docs/workbuddy/From-Beginner-to-Expert-Guide/Practice-Cases/Create-Skills)
+- [Qwen Code Skills](https://qwenlm.github.io/qwen-code-docs/en/users/features/skills/) · [Kimi Code CLI Skills](https://moonshotai.github.io/kimi-cli/en/customization/skills.html)
 
 ## Contributing and license
 

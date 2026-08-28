@@ -19,6 +19,8 @@
       --amber-soft: #fff1d8;
       --coral: #b53b2e;
       --coral-soft: #fdebe8;
+      --green: #2f6b3f;
+      --green-soft: #e9f5ec;
       --charcoal: #17212a;
       --radius: 8px;
       --shadow: 0 14px 34px rgba(16, 24, 32, 0.08);
@@ -87,10 +89,10 @@
     .section-head p { margin-bottom: 0; color: var(--muted); font-size: 17px; }
 
     .principle { background: var(--canvas); }
-    .principle-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+    .principle-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px; }
     .principle-item {
-      min-height: 224px;
-      padding: 28px;
+      min-height: 248px;
+      padding: 24px;
       background: var(--paper);
       border: 1px solid var(--line);
       border-top: 4px solid var(--blue);
@@ -99,10 +101,11 @@
     .principle-item:nth-child(2) { border-top-color: var(--teal); }
     .principle-item:nth-child(3) { border-top-color: var(--amber); }
     .principle-item:nth-child(4) { border-top-color: var(--coral); }
+    .principle-item:nth-child(5) { border-top-color: var(--green); }
     .number {
       width: 34px;
       height: 34px;
-      margin-bottom: 38px;
+      margin-bottom: 30px;
       display: grid;
       place-items: center;
       background: var(--ink);
@@ -210,7 +213,23 @@
     }
     .handoff-line span:first-child { color: #8eb0ff; font-weight: 700; }
 
-    .release { background: var(--paper); }
+    .report { background: var(--paper); }
+    .report-layout { display: grid; grid-template-columns: 0.8fr 1.2fr; gap: 48px; align-items: stretch; }
+    .report-points { display: grid; gap: 1px; background: var(--line); border: 1px solid var(--line); }
+    .report-point { min-height: 102px; padding: 20px 22px; background: var(--paper); display: grid; grid-template-columns: 34px 1fr; gap: 16px; }
+    .report-point .number { margin: 0; width: 30px; height: 30px; }
+    .report-point strong { display: block; margin-bottom: 4px; font-size: 16px; }
+    .report-point span { color: var(--muted); font-size: 13px; }
+    .report-console { min-height: 460px; padding: 30px; background: var(--charcoal); border-radius: var(--radius); color: white; }
+    .report-console-top { display: flex; justify-content: space-between; gap: 18px; margin-bottom: 22px; padding-bottom: 18px; border-bottom: 1px solid #3b4852; }
+    .report-console-top strong { font-size: 18px; }
+    .report-status { color: #82dba2; font-size: 12px; font-weight: 800; }
+    .report-row { display: grid; grid-template-columns: 92px 1fr; gap: 16px; padding: 9px 0; border-bottom: 1px solid #2d3943; font-size: 13px; }
+    .report-row span:first-child { color: #8eb0ff; font-weight: 700; }
+    .report-row span:last-child { color: #d8e0e5; }
+    .report-command { margin-top: 20px; padding: 13px 15px; background: #0f171e; border-left: 3px solid #82dba2; color: #dff6e6; font-family: "SFMono-Regular", Consolas, monospace; font-size: 13px; }
+
+    .release { background: var(--canvas); }
     .decision-flow { display: grid; grid-template-columns: 1fr 54px 1fr 54px 1fr; align-items: center; }
     .decision-node {
       min-height: 174px;
@@ -227,7 +246,7 @@
     .note { padding: 22px 24px; border-left: 4px solid var(--blue); background: var(--blue-soft); font-size: 14px; }
     .note:last-child { border-left-color: var(--coral); background: var(--coral-soft); }
 
-    .collaboration { background: var(--canvas); }
+    .collaboration { background: var(--paper); }
     .collab-grid { display: grid; grid-template-columns: 0.75fr 1.25fr; gap: 48px; align-items: stretch; }
     .scope-graphic {
       min-height: 390px;
@@ -251,7 +270,7 @@
     .ok { color: var(--teal); font-weight: 800; }
     .stop { color: var(--coral); font-weight: 800; }
 
-    .storage { background: var(--paper); }
+    .storage { background: var(--canvas); }
     .storage-layout { display: grid; grid-template-columns: 1fr 1fr; gap: 48px; align-items: start; }
     .tree {
       margin: 0;
@@ -286,7 +305,7 @@
       .flow-node { min-height: 116px; }
       .arrow { min-height: 42px; font-size: 0; }
       .arrow::before { content: "↓"; font-size: 24px; }
-      .cycle-layout, .collab-grid, .storage-layout { grid-template-columns: 1fr; }
+      .cycle-layout, .report-layout, .collab-grid, .storage-layout { grid-template-columns: 1fr; }
       .closing .inner { grid-template-columns: 1fr; gap: 34px; }
     }
 
@@ -321,7 +340,8 @@
       .cycle-arrow.right::before, .cycle-arrow.left::before { content: "↓"; font-size: 24px; }
       .decision-flow { grid-template-columns: 1fr; }
       .decision-flow .arrow { min-height: 42px; }
-      .handoff-line { grid-template-columns: 1fr; gap: 4px; }
+      .handoff-line,
+      .report-row { grid-template-columns: 1fr; gap: 4px; }
       .scope-row { grid-template-columns: 1fr; }
       .table-wrap { overflow-x: auto; }
       table { min-width: 620px; }
@@ -336,7 +356,7 @@
       <div class="hero-copy">
         <div class="eyebrow">一次安装，项目长期生效</div>
         <h1>Skill 只负责安装，<br>项目自己持续交接。</h1>
-        <p>第一次执行后，Agent Relay 把自动入口、运行脚本和交接状态留在当前项目。后续任何 Agent 打开文件夹都会先接手上下文，无需用户再次触发 Skill。</p>
+        <p>第一次执行后，Agent Relay 把自动入口、运行脚本和交接状态留在当前项目。后续任何 Agent 打开文件夹都会先接手上下文，并可随时生成状态快报，无需用户再次触发 Skill。</p>
       </div>
       <div class="hero-facts">
         <div class="fact"><strong>自动进入</strong><span>Harness 启动时读取项目入口</span></div>
@@ -349,12 +369,13 @@
   <main>
     <section class="principle band">
       <div class="inner">
-        <div class="section-head"><div><div class="section-kicker">01 / SIMPLIFIED SCOPE</div><h2>只保留四项能力</h2></div><p>用户只需要感知四件事：新 Agent 能接上、过程有记录、成果能封版、多人不会撞车。其余实现细节都隐藏在项目运行时中。</p></div>
+        <div class="section-head"><div><div class="section-kicker">01 / SIMPLIFIED SCOPE</div><h2>只保留五项能力</h2></div><p>用户只需要感知五件事：新 Agent 能接上、过程有记录、现状能秒报、成果能封版、多人不会撞车。其余实现细节都隐藏在项目运行时中。</p></div>
         <div class="principle-grid">
           <article class="principle-item"><div class="number">01</div><h3>自动接手</h3><p>任何 Agent 开始前先读短交接，知道目标、进度、阻塞和下一步。</p></article>
           <article class="principle-item"><div class="number">02</div><h3>自动记录</h3><p>任务结束后记录问题、动作、结果和验证，不保存冗长聊天与思维过程。</p></article>
-          <article class="principle-item"><div class="number">03</div><h3>自动封版</h3><p>明确要定版或交付时保存不可变副本，后续继续修改工作稿。</p></article>
-          <article class="principle-item"><div class="number">04</div><h3>自动协调</h3><p>Agent 先认领任务和文件；环境不兼容时说明替代方案并请求确认。</p></article>
+          <article class="principle-item"><div class="number">03</div><h3>快速汇报</h3><p>只读汇总健康、目标、任务、版本、环境、阻塞与下一步。</p></article>
+          <article class="principle-item"><div class="number">04</div><h3>自动封版</h3><p>明确要定版或交付时保存不可变副本，后续继续修改工作稿。</p></article>
+          <article class="principle-item"><div class="number">05</div><h3>自动协调</h3><p>Agent 先认领任务和文件；环境不兼容时说明替代方案并请求确认。</p></article>
         </div>
       </div>
     </section>
@@ -407,9 +428,35 @@
       </div>
     </section>
 
+    <section class="report band">
+      <div class="inner">
+        <div class="section-head"><div><div class="section-kicker">05 / QUICK REPORT</div><h2>一句话，汇报现在的情况</h2></div><p><code>relay report</code> 只读取规范状态，不翻完整历史、不认领任务、不改写交接。Agent 可以直接转述固定结构的结果。</p></div>
+        <div class="report-layout">
+          <div class="report-points">
+            <div class="report-point"><span class="number">01</span><div><strong>快</strong><span>只读状态目录并做轻量一致性检查，设计目标为数秒内返回。</span></div></div>
+            <div class="report-point"><span class="number">02</span><div><strong>准</strong><span>HANDOFF 落后、租约过期或能力缺失时明确标记 degraded / stale。</span></div></div>
+            <div class="report-point"><span class="number">03</span><div><strong>可复用</strong><span>Markdown 给用户，JSON 给 Hook、MCP、脚本和其他 Agent。</span></div></div>
+            <div class="report-point"><span class="number">04</span><div><strong>无副作用</strong><span>不刷新租约、不创建事件、不改变任何项目状态。</span></div></div>
+          </div>
+          <div class="report-console" aria-label="Agent Relay 快速报告示例">
+            <div class="report-console-top"><strong>Agent Relay 快报</strong><span class="report-status">HEALTHY</span></div>
+            <div class="report-row"><span>项目目标</span><span>完成 v0.1 安装器与跨 Harness 验证</span></div>
+            <div class="report-row"><span>当前任务</span><span>docs-012 · 扩展国产 Harness 兼容矩阵</span></div>
+            <div class="report-row"><span>最近完成</span><span>双语 README 已上线，桌面/手机渲染通过</span></div>
+            <div class="report-row"><span>版本状态</span><span>v002 已封存 · 工作稿有 3 个未封版文件</span></div>
+            <div class="report-row"><span>当前环境</span><span>Qoder IDE · Shell ✓ · Browser ✓ · Computer Use —</span></div>
+            <div class="report-row"><span>阻塞风险</span><span>WorkBuddy 需要 skill.yml 桥接适配器</span></div>
+            <div class="report-row"><span>下一步</span><span>实现 report JSON Schema 和新鲜度检查</span></div>
+            <div class="report-row"><span>更新时间</span><span>event docs-012-checkpoint</span></div>
+            <div class="report-command">$ relay report --short</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <section class="release band">
       <div class="inner">
-        <div class="section-head"><div><div class="section-kicker">05 / VERSION SEALING</div><h2>定版只做一次判断</h2></div><p>识别的是“现在要交付”的完整语义，不是机械扫描单个关键词。明确时自动执行，模糊时只确认范围。</p></div>
+        <div class="section-head"><div><div class="section-kicker">06 / VERSION SEALING</div><h2>定版只做一次判断</h2></div><p>识别的是“现在要交付”的完整语义，不是机械扫描单个关键词。明确时自动执行，模糊时只确认范围。</p></div>
         <div class="decision-flow" aria-label="定版判断流程">
           <div class="decision-node"><strong>收到用户消息</strong><p>例如“定版”“就按这个发”“可以了”。</p></div><div class="arrow">→</div>
           <div class="decision-node question"><strong>是否明确立即交付？</strong><p>明确则继续；无法判断是步骤完成还是整体定版时询问。</p></div><div class="arrow">→</div>
@@ -421,7 +468,7 @@
 
     <section class="collaboration band">
       <div class="inner">
-        <div class="section-head"><div><div class="section-kicker">06 / MULTI-AGENT SAFETY</div><h2>并行可以，撞文件不行</h2></div><p>每个 Agent 开始前声明写入范围。不同文件可以并行；同一文件必须等待、拆分任务，或使用独立 Git worktree。</p></div>
+        <div class="section-head"><div><div class="section-kicker">07 / MULTI-AGENT SAFETY</div><h2>并行可以，撞文件不行</h2></div><p>每个 Agent 开始前声明写入范围。不同文件可以并行；同一文件必须等待、拆分任务，或使用独立 Git worktree。</p></div>
         <div class="collab-grid">
           <div class="scope-graphic"><h3>文件范围认领</h3><div class="scope-row"><div class="scope-box"><strong>Agent A</strong>src/api/**</div><div class="scope-box"><strong>Agent B</strong>docs/**</div></div><div class="collision">若 Agent C 也要修改 src/api/**，系统先阻止写入并给出等待或 worktree 方案。</div></div>
           <div class="table-wrap"><table><thead><tr><th>任务关系</th><th>文件关系</th><th>处理</th></tr></thead><tbody>
@@ -437,7 +484,7 @@
 
     <section class="storage band">
       <div class="inner">
-        <div class="section-head"><div><div class="section-kicker">07 / MINIMAL PROJECT FOOTPRINT</div><h2>项目里只留下必要内容</h2></div><p>共享事实与本机环境分开。可提交的记录经过脱敏；锁、缓存、私有路径和机器状态默认不进入 Git。</p></div>
+        <div class="section-head"><div><div class="section-kicker">08 / MINIMAL PROJECT FOOTPRINT</div><h2>项目里只留下必要内容</h2></div><p>共享事实与本机环境分开。可提交的记录经过脱敏；锁、缓存、私有路径和机器状态默认不进入 Git。</p></div>
         <div class="storage-layout">
           <pre class="tree">project/
 ├── AGENTS.md
@@ -464,7 +511,7 @@
       </div>
     </section>
 
-    <section class="closing band"><div class="inner"><div><h2>最终体验：用户照常提需求</h2><p>Agent Relay 自动完成接手、认领、记录和封版。只有发生冲突、能力不匹配或定版范围模糊时，才需要用户做决定。</p></div><div class="command-line">install once → project stays relay-aware</div></div></section>
+    <section class="closing band"><div class="inner"><div><h2>最终体验：用户照常提需求</h2><p>Agent Relay 自动完成接手、认领、记录、汇报和封版。只有发生冲突、能力不匹配或定版范围模糊时，才需要用户做决定。</p></div><div class="command-line">install once → project stays relay-aware</div></div></section>
   </main>
   <footer><div class="inner"><span>Agent Relay simplified architecture</span><span>Project-local · Harness-adapted · Secret-safe</span></div></footer>
 </body>
