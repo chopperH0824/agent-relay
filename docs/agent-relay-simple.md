@@ -2,9 +2,15 @@
 
 ## 一句话定义
 
-Agent Relay 是一个**只需执行一次的项目安装 Skill**。
+Agent Relay 是一个**只需执行一次的项目安装 Skill**，当前正式版本为 `v0.1.0`。
 
-安装完成后，能力由项目中的常驻入口、运行脚本和状态文件维持。以后无论由 Codex、Pi、Claude Code、Cursor、Gemini、Copilot、Qoder、TRAE、CodeBuddy、Qwen Code、Kimi Code CLI 或其他 Agent 接手，都不需要用户再次主动触发 Skill。
+```bash
+npx skills add chopperH0824/agent-relay --skill agent-relay
+# GitHub CLI 2.90.0+ preview
+gh skill install chopperH0824/agent-relay agent-relay
+```
+
+安装完成后，能力由项目中的常驻入口、Python 标准库运行时和状态文件维持。以后无论由 Codex、Pi、Claude Code、Cursor、Gemini、Copilot、Qoder、TRAE、CodeBuddy、Qwen Code、Kimi Code CLI 或其他 Agent 接手，都不需要用户再次主动触发安装 Skill。
 
 > Skill 负责安装，项目自己负责长期运行。
 
@@ -49,17 +55,20 @@ flowchart LR
 ```text
 project/
 ├── AGENTS.md                       # 跨 Harness 自动入口
-├── CLAUDE.md                       # Claude 入口，导入 AGENTS.md
-├── GEMINI.md                       # Gemini 入口，导入 AGENTS.md
+├── CLAUDE.md                       # auto/all 模式按需创建
+├── GEMINI.md                       # auto/all 模式按需创建
 ├── .agents/skills/agent-relay/     # 项目级 Skill 兼容入口
 └── .agent-relay/
     ├── HANDOFF.md                  # 每个 Agent 第一时间读取的短总览
-    ├── relay.py                    # 项目内常驻运行脚本
+    ├── relay.py                    # Python 3.9+ 项目内运行时
+    ├── config.json                 # Schema、策略与 adapter 清单
     ├── goals.json                  # 长期、短期和候选目标
     ├── tasks/                      # 任务、认领人、文件范围和状态
     ├── events/                     # 每次任务的简短事实记录
-    ├── versions/                   # 已封版成果和版本历程
-    ├── environments/               # 脱敏后的环境与能力快照
+    ├── versions/                   # 已封版成果和 SHA-256 清单
+    ├── environments/{shared,local}/# 脱敏共享信息与本机路径分离
+    ├── integrations/               # WorkBuddy 等手动桥接说明
+    ├── backups/                    # 初始化前文件副本
     └── runtime/                    # 锁、租约和本机临时状态
 ```
 
@@ -162,22 +171,26 @@ flowchart LR
 
 WorkBuddy 公开的自定义 Skill 以 `skill.yml` 为主，TraeWork 则原生使用 `SKILL.md`；两者必须采用不同适配器。办公 Agent 还必须记录授权文件夹及本地/云端运行环境，不能默认扫描项目外文件。
 
-## 环境记录也做简化
+## 环境记录的 v0.1 边界
 
-每次动作只引用一个环境快照 ID，不重复记录整台电脑。只有环境变化时才创建新快照。
+`start` 根据当前命令参数和安全白名单创建环境快照；相同内容通过指纹复用。
 
-记录：
+共享记录：
 
-- 操作系统、架构、Harness、模型和版本，探测不到就写 `unknown`。
-- 可用工具能力、Skill、MCP、插件名称与脱敏配置路径。
-- Git、SSH 命令路径、SSH Host alias、公钥指纹和最近验证时间。
+- 操作系统、版本、CPU 架构、Python 和 Git 版本。
+- Harness、模型及调用者明确传入的能力名称；探测不到时写 `unknown`。
+
+只保存在 Git 忽略的 local 目录：
+
+- 项目根路径、Python 与 Git 可执行文件路径。
 
 不记录：
 
 - Token、密码、Cookie、私钥内容、Keychain 内容。
-- 完整环境变量值、完整聊天记录、模型隐含思维过程。
+- 完整环境变量、MCP 配置原文、SSH 私钥或完整聊天。
+- 模型隐含思维过程。
 
-如果历史流程依赖当前没有的工具，Agent 必须说明：缺少什么、可替代什么、结果有何差异，并在采用实质不同的方案前取得用户同意。
+v0.1 不主动扫描用户级 MCP、插件或 SSH 配置。若历史流程依赖当前没有的工具，Agent 应说明缺少什么、可替代什么及结果差异，并在采用实质不同方案前取得确认。
 
 ## 边界与可靠性
 
@@ -187,18 +200,20 @@ WorkBuddy 公开的自定义 Skill 以 `skill.yml` 为主，TraeWork 则原生�
 - 初始化必须幂等、支持预览和卸载，不能覆盖现有 `AGENTS.md` 等文件。
 - 共享记录必须脱敏；本机路径、锁和缓存默认加入 `.gitignore`。
 
-## 推荐首版
-
-首版只实现以下命令即可：
+## `v0.1.0` 已实现命令
 
 ```text
-relay init       安装项目常驻能力
-relay start      读取环境、创建或认领任务
-relay finish     记录结果并刷新交接
+relay init       dry-run 后安装或更新项目常驻能力
+relay start      读取环境、创建任务并认领写范围
+relay checkpoint 保存长任务接手点并续租
+relay finish     记录结果、释放任务并刷新交接
+relay goal       添加、查看和更新明确/候选目标
 relay report     只读快速汇报当前情况
-relay seal       创建不可变版本
-relay status     查看任务、冲突和最近动作
-relay doctor     验证各 Harness 入口是否有效
+relay seal       创建不可覆盖版本和 SHA-256 清单
+relay status     查看任务、目标、版本和最近动作
+relay doctor     验证入口、Schema、校验值和秘密模式
+relay uninstall  移除受管入口与运行时，默认保留历史
+relay purge      双重确认后永久删除 Relay 数据
 ```
 
-所有自动行为最终都调用这七个稳定动作。以后即使增加 Hook、MCP 或可视化界面，也不改变底层数据协议。
+运行时位于 [`skills/agent-relay/scripts/relay.py`](../skills/agent-relay/scripts/relay.py)，只依赖 Python 3.9+ 标准库。JSON 快报契约见 [`report.schema.json`](../skills/agent-relay/assets/report.schema.json)。

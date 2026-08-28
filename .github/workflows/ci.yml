@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  python:
+    name: Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version:
+          - "3.9"
+          - "3.11"
+          - "3.13"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Compile runtime and tests
+        run: python -m compileall -q skills/agent-relay/scripts tests
+      - name: Run unit and integration tests
+        run: python -m unittest discover -s tests -v
+
+  skill-discovery:
+    name: Agent Skills discovery
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Verify npx skills discovery
+        env:
+          DO_NOT_TRACK: "1"
+        run: npx --yes skills add . --list | tee /tmp/skills.txt && grep -q "agent-relay" /tmp/skills.txt

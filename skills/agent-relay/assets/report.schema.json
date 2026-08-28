@@ -1,0 +1,155 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/chopperH0824/agent-relay/blob/v0.1.0/skills/agent-relay/assets/report.schema.json",
+  "title": "Agent Relay report v1",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "health",
+    "project",
+    "project_goal",
+    "active_work",
+    "version_state",
+    "blockers",
+    "next_step",
+    "issues"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "health": {
+      "enum": [
+        "healthy",
+        "degraded",
+        "stale",
+        "uninitialized"
+      ]
+    },
+    "project": {
+      "type": "string"
+    },
+    "project_goal": {
+      "type": "string"
+    },
+    "goals": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "active_work": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "owner",
+          "status",
+          "write_scopes"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "owner": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "write_scopes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "lease_expires_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "additionalProperties": true
+      }
+    },
+    "last_completed": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "version_state": {
+      "type": "object",
+      "required": [
+        "latest",
+        "unsealed_changes",
+        "storage_bytes"
+      ],
+      "properties": {
+        "latest": {
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "unsealed_changes": {
+          "type": [
+            "integer",
+            "string"
+          ]
+        },
+        "storage_bytes": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    },
+    "environment": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "blockers": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "next_step": {
+      "type": "string"
+    },
+    "updated_at": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "source_event_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "issues": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "adapters": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    }
+  },
+  "additionalProperties": true
+}

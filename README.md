@@ -4,292 +4,366 @@
 
 <h1 align="center">Agent Relay</h1>
 
+<p align="center"><strong>让下一个 Agent 直接接着做，而不是从头再问一遍。</strong></p>
+
 <p align="center">
-  一次安装，把可持续的项目交接、状态快报、版本记录和多 Agent 协作留在项目里。
+  Agent Relay 只安装一次，就把项目目标、当前任务、动作记录、状态快报、版本封存和多 Agent 协作能力留在项目里。
 </p>
 
 <p align="center">
-  <img alt="Status: specification" src="https://img.shields.io/badge/status-specification-f59e0b">
-  <img alt="Agent Skills standard" src="https://img.shields.io/badge/standard-Agent%20Skills-2563eb">
-  <img alt="Runtime: planned" src="https://img.shields.io/badge/runtime-planned-lightgrey">
+  <img src="./docs/demo.gif" alt="Agent Relay 从触发初始化到生成项目状态快报的 30 秒演示" width="900">
 </p>
-
-> [!IMPORTANT]
-> **当前状态：规格设计阶段。** 仓库目前包含完整设计说明和可视化原型，但还没有可执行的 `SKILL.md`、安装器或 Relay CLI。本文中的安装命令和运行行为描述的是计划中的 `v0.1` 接口，正式发布前不要把它们用于生产项目。
-
-Agent Relay 的目标不是要求用户在每次对话中主动调用一个 Skill。它把 Skill 定位为**一次性项目安装器**：首次执行后，将项目级入口、轻量运行脚本和交接状态安装到当前项目。此后 Agent 通过项目自身的说明文件自动发现并执行交接协议。
-
-- **Skill 负责安装。**
-- **项目负责长期保持能力。**
-- **用户之后照常提出需求，不需要再次主动触发 Skill。**
-
-[查看可视化架构](./docs/agent-relay-simple.html) · [查看简化规格](./docs/agent-relay-simple.md) · [桌面预览](./docs/agent-relay-desktop.jpg) · [手机预览](./docs/agent-relay-mobile.jpg)
-
-## 目录
-
-- [Agent Relay 解决什么问题](#agent-relay-解决什么问题)
-- [五项核心能力](#五项核心能力)
-- [为什么执行一次后可以持续生效](#为什么执行一次后可以持续生效)
-- [安装与首次初始化](#安装与首次初始化)
-- [初始化完成后怎么做](#初始化完成后怎么做)
-- [它会对电脑做什么](#它会对电脑做什么)
-- [它不会对电脑做什么](#它不会对电脑做什么)
-- [项目内文件结构](#项目内文件结构)
-- [日常工作流程](#日常工作流程)
-- [快速状态汇报](#快速状态汇报)
-- [目标、动作、版本和环境记录](#目标动作版本和环境记录)
-- [多 Agent 协作](#多-agent-协作)
-- [Harness 兼容策略](#harness-兼容策略)
-- [隐私与安全](#隐私与安全)
-- [计划中的命令](#计划中的命令)
-- [卸载与恢复](#卸载与恢复)
-- [限制](#限制)
-- [常见问题](#常见问题)
-- [路线图](#路线图)
-
-## Agent Relay 解决什么问题
-
-同一个项目经常在不同时间交给不同模型、桌面应用或命令行 Agent。新的 Agent 通常无法可靠知道：
-
-- 用户对整个项目的长期目标是什么；
-- 上一个 Agent 刚刚修改了什么、验证到哪里；
-- 哪个版本已经发给领导、同事或客户；
-- 哪些文件正在被另一个 Agent 修改；
-- 历史流程依赖了什么模型、MCP、插件、浏览器或本机工具；
-- 当前 Harness 是否拥有相同能力，能否复用历史流程。
-
-Agent Relay 在项目中维护一个小而明确的交接层，使下一位 Agent 能先读取事实，再开始执行当前请求。
-
-历史目标只用于提醒，不具有强制性。**用户当前明确消息始终优先。**
-
-## 五项核心能力
-
-| 能力 | 自动行为 | 目的 |
-| --- | --- | --- |
-| 自动接手 | 新 Agent 开始前先读取 `HANDOFF.md` | 知道项目现状、进行中任务和下一步 |
-| 自动记录 | 任务结束时记录问题、动作、结果与验证 | 为临时接手提供足够事实，而不是保存完整聊天 |
-| 快速汇报 | `relay report` 生成固定格式的当前情况 | 不翻历史日志也能立即回答“现在做到哪了” |
-| 自动封版 | 识别明确的定版或立即交付语义 | 留下不可变版本，防止后续修改覆盖交付成果 |
-| 自动协调 | 认领任务和写入范围，比较环境能力 | 避免多 Agent 冲突，并发现工具能力差异 |
-
-## 为什么执行一次后可以持续生效
-
-普通 Skill 通常按需加载，不能保证每次会话都被模型主动选择。Agent Relay 的首次执行会把一个最小常驻层写入项目：
-
-```mermaid
-flowchart LR
-    A[安装 Agent Relay Skill] --> B[在目标项目执行一次 init]
-    B --> C[写入 Harness 项目入口]
-    C --> D[安装项目内 Relay 运行时]
-    D --> E[创建 HANDOFF 与状态目录]
-    E --> F[doctor 验证]
-    F --> G[以后无需再次主动触发 Skill]
-```
-
-后续会话依赖 Harness 自动加载的项目指令，而不是依赖用户想起 Skill：
-
-```mermaid
-flowchart LR
-    A[Agent 打开项目] --> B[自动加载 AGENTS / CLAUDE / GEMINI 等入口]
-    B --> C[读取 HANDOFF]
-    C --> D[创建或认领任务]
-    D --> E[执行当前用户请求]
-    E --> F[记录结果并刷新交接]
-```
-
-这不是后台守护进程。Agent Relay 不会一直占用 CPU 或监听端口；它由 Agent 根据项目入口，在会话开始、任务完成和封版时调用项目内脚本。
-
-## 安装与首次初始化
-
-### 当前版本说明
-
-以下是计划中的 `v0.1` 使用方式。仓库发布有效的 `SKILL.md` 和安装脚本后才可以执行。
-
-### 方式 A：安装到当前项目
-
-适合只在一个项目中使用：
 
 ```bash
-cd /path/to/your-project
 npx skills add chopperH0824/agent-relay --skill agent-relay
 ```
 
-`npx skills` 是第三方 Agent Skills 安装工具，不属于 Agent Relay。它默认把 Skill 安装到项目支持的 Skill 目录，并让用户选择目标 Agent。
+<p align="center">
+  <a href="https://github.com/chopperH0824/agent-relay/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/chopperH0824/agent-relay/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="https://github.com/chopperH0824/agent-relay/releases/latest"><img alt="Release" src="https://img.shields.io/github/v/release/chopperH0824/agent-relay"></a>
+  <a href="./LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-16a34a.svg"></a>
+  <a href="https://github.com/chopperH0824/agent-relay/stargazers"><img alt="GitHub Stars" src="https://img.shields.io/github/stars/chopperH0824/agent-relay?style=flat"></a>
+  <a href="https://agentskills.io"><img alt="Agent Skills compatible" src="https://img.shields.io/badge/Agent%20Skills-compatible-2563eb"></a>
+</p>
 
-如需关闭该第三方工具自己的匿名遥测，可使用：
+[最新版本](https://github.com/chopperH0824/agent-relay/releases/latest) · [可视化架构](./docs/agent-relay-simple.html) · [完整协议](./skills/agent-relay/references/PROTOCOL.md) · [安全边界](./skills/agent-relay/references/SECURITY.md)
 
-```bash
-DO_NOT_TRACK=1 npx skills add chopperH0824/agent-relay --skill agent-relay
-```
+## Quick Start
 
-### 方式 B：全局安装，再初始化多个项目
+1. 安装 Skill：
 
-适合在多项目中重复使用安装器：
+   ```bash
+   npx skills add chopperH0824/agent-relay --skill agent-relay
+   ```
 
-```bash
-DO_NOT_TRACK=1 npx skills add chopperH0824/agent-relay --skill agent-relay --global
-```
+2. 在目标项目里对 Agent 说：
 
-全局安装只让 Harness 能找到“安装 Skill”。每一个目标项目仍需单独执行一次初始化。
+   ```text
+   使用 agent-relay 初始化当前项目。先展示 dry-run，说明每个文件变化；确认后执行并运行 doctor。
+   ```
 
-### 在目标项目执行一次初始化
+3. 初始化后随时查看状态：
 
-打开目标项目后，对 Agent 说：
+   ```bash
+   python3 .agent-relay/relay.py report
+   ```
 
-```text
-使用 agent-relay 初始化当前项目。先展示 dry-run，说明将创建和修改的每个文件，得到我的确认后再执行。
-```
-
-支持 Skill 命令的 Harness 也可以使用计划中的命令：
-
-```text
-/agent-relay init --dry-run
-/agent-relay init
-```
-
-初始化器应当：
-
-1. 确认当前目录或 Git 根目录是正确项目。
-2. 扫描已有项目指令，避免覆盖用户内容。
-3. 展示将创建、修改、备份和忽略的路径。
-4. 获得批准后写入项目常驻能力。
-5. 执行 `doctor`，验证入口与状态文件可读。
-6. 生成第一次 `HANDOFF.md`；识别不到目标时保持空白。
-
-## 初始化完成后怎么做
-
-初始化成功后，用户只需要做三件事：
-
-1. 查看 `.agent-relay/HANDOFF.md`，确认项目简介和已识别目标是否准确。
-2. 根据需要补充长期目标；没有全局目标可以继续留空。
-3. 继续像平常一样向任何 Agent 提需求。
-
-以后不需要重复输入 `/agent-relay`。新的 Agent 应当自动：
-
-- 读取交接总览；
-- 检查是否存在进行中的任务和文件占用；
-- 记录本次 Harness、模型和可用能力；
-- 完成用户任务；
-- 写入简短动作记录并刷新交接；
-- 在明确要定版或立即发送时创建版本副本。
-
-可以随时执行计划中的检查和汇报命令：
+也可以使用 GitHub CLI 2.90.0+ 的预览命令：
 
 ```bash
-python .agent-relay/relay.py report
-python .agent-relay/relay.py status
-python .agent-relay/relay.py doctor
+gh skill install chopperH0824/agent-relay agent-relay
 ```
 
-## 它会对电脑做什么
+`npx skills` 是第三方安装工具并包含匿名遥测；可用 `DO_NOT_TRACK=1` 关闭。`gh skill` 当前仍是 GitHub CLI 的 preview 功能。安装前请审查 [`SKILL.md`](./skills/agent-relay/SKILL.md) 和运行脚本。
 
-下面描述的是默认、安全模式的目标行为。所有写入都应限定在用户确认的项目根目录；只有用户主动选择全局安装 Skill 时，才会写入用户级 Skill 目录。
+## 适用与不适用
 
-### 1. 安装 Skill 时
+| 适合 | 不适合 |
+| --- | --- |
+| 项目会在 Codex、Claude、Cursor、Pi、Qoder、TRAE 等 Agent 之间切换 | 只进行一次、无需后续接手的临时对话 |
+| 需要快速回答“现在做到哪了” | 希望自动保存完整聊天或模型思维过程 |
+| 需要区分工作稿和已交付版本 | 需要云端项目管理、团队账号或远程数据库 |
+| 多个 Agent 可能并行修改不同文件 | 需要跨机器、NFS 或网盘目录的强一致分布式锁 |
+| 希望项目自己长期保留交接能力 | 希望项目指令绕过系统、组织或用户权限策略 |
 
-根据所选 Harness 和安装范围，Agent Skills 安装工具可能在以下位置之一写入 Agent Relay Skill：
+> [!NOTE]
+> **当前正式版本：`v0.1.0`。** Skill、项目初始化器和 Python 标准库运行时已经可用。CI 覆盖 Python 3.9、3.11 和 3.13；直接适配器可以生成并由 `doctor` 校验，但封闭产品是否在真实会话中加载入口仍按兼容等级分别标注。
 
-| 范围 | 示例路径 | 作用 |
+## 它解决什么问题
+
+一个项目经常在不同时间交给不同模型、桌面应用或命令行 Agent。新的 Agent 通常不知道：
+
+- 上一个 Agent 修改了什么、验证到哪里；
+- 当前目标和下一步是什么；
+- 哪个版本已经交付，哪些只是后续工作稿；
+- 哪些文件正在被其他 Agent 修改；
+- 历史流程依赖了什么 Harness、模型或本机能力；
+- 当前环境是否能复用原来的做法。
+
+Agent Relay 在项目里维护一个小而明确的交接层，让 Agent 先读取事实，再执行当前请求。
+
+**历史目标只用于提醒。用户当前明确消息始终优先。**
+
+## 五项核心能力
+
+| 能力 | 自动行为 | 解决的问题 |
 | --- | --- | --- |
-| 项目级 | `.agents/skills/agent-relay/`、`.claude/skills/agent-relay/`、`.cursor/skills/agent-relay/` | 只在当前项目提供首次安装能力 |
-| 用户级 | `~/.agents/skills/agent-relay/`、`~/.claude/skills/agent-relay/`、`~/.codex/skills/agent-relay/` | 可在多个项目调用安装器 |
+| 自动接手 | 新 Agent 先读 `HANDOFF.md` 和只读快报 | 不知道前一个 Agent 做到哪里 |
+| 自动记录 | 任务结束时记录结果、文件、验证和下一步 | 对话切换后丢失可执行上下文 |
+| 快速汇报 | `relay report` 固定格式输出当前情况 | 为回答状态而翻阅全部历史 |
+| 自动封版 | 明确交付时创建不可覆盖的 `vNNN` 版本 | 后续修改覆盖已交付成果 |
+| 自动协调 | 任务租约和写入范围冲突检测 | 多 Agent 同时修改同一文件 |
 
-具体路径由 Harness 或 Skill 安装工具决定。安装第三方 Skill 前应先审查 `SKILL.md` 和脚本。
+## 为什么只安装一次
 
-### 2. 在项目执行 `init` 时读取的信息
+Skill 只负责把最小能力装入项目：
 
-| 读取项 | 用途 | 是否保存原文 |
-| --- | --- | --- |
-| 当前目录、Git 根目录 | 确定安装边界 | 只记录规范化项目路径 |
-| 已有 `AGENTS.md`、`CLAUDE.md`、`GEMINI.md` 和适配规则 | 合并入口并避免覆盖 | 仅用于生成受管标记块 |
-| Git 状态、当前分支和最近提交 ID | 记录项目基线 | 保存必要摘要，不自动提交 |
-| 操作系统、CPU 架构、Shell、Python/Git 路径 | 建立环境快照 | 保存脱敏元数据 |
-| 可发现的 Harness、Skill、MCP 和插件清单 | 判断历史流程能否复用 | 保存名称、版本和配置路径，不保存密钥值 |
-| `~/.ssh/config` 中的 Host alias 与 `IdentityFile` 路径 | 提示可用远程连接方式 | 仅在用户允许本机工具扫描时读取；不打开私钥 |
+```mermaid
+flowchart LR
+    A[安装 Agent Relay Skill] --> B[在目标项目运行一次 init]
+    B --> C[写入项目指令和 Skill 入口]
+    C --> D[复制项目内 relay.py]
+    D --> E[创建 HANDOFF 与状态目录]
+    E --> F[doctor 验证]
+```
 
-环境扫描分为两级：
+以后依靠项目入口继续运行，不依赖用户再次触发安装 Skill：
 
-- **默认：元数据扫描。** 读取版本、命令路径和项目内可见配置。
-- **可选：本机工具扫描。** 经用户批准后，读取已知 MCP、插件和 SSH 配置中的非秘密字段。
+```mermaid
+flowchart LR
+    A[新 Agent 打开项目] --> B[加载 AGENTS / Skill / Harness 规则]
+    B --> C[读取 HANDOFF 与 report]
+    C --> D[认领任务和写范围]
+    D --> E[执行当前请求]
+    E --> F[finish 并刷新交接]
+```
 
-### 3. 在项目中创建的内容
+它不是后台守护进程，不持续占用 CPU，也不监听端口。Agent 只在进入项目、开始任务、检查点、完成任务和封版时运行短命令。
 
-| 路径 | 默认行为 | 用途 |
-| --- | --- | --- |
-| `.agent-relay/HANDOFF.md` | 创建并自动刷新 | 新 Agent 第一时间读取的短总览 |
-| `.agent-relay/relay.py` | 创建 | 无第三方依赖的项目内运行脚本 |
-| `.agent-relay/config.json` | 创建 | Schema 版本、适配器和记录策略 |
-| `.agent-relay/goals.json` | 创建，可为空 | 长期、短期和候选目标 |
-| `.agent-relay/tasks/` | 创建 | 一任务一文件，包含认领和写入范围 |
-| `.agent-relay/events/` | 创建 | 一事件一文件，避免并发追加冲突 |
-| `.agent-relay/versions/` | 创建 | 已封版交付物、校验值和版本历程 |
-| `.agent-relay/environments/` | 创建 | 脱敏后的环境与能力快照 |
-| `.agent-relay/runtime/` | 创建并 Git 忽略 | 锁、租约、缓存和本机临时状态 |
-| `.agent-relay/backups/` | 初始化修改已有文件时创建 | 保存修改前副本，便于恢复 |
+## 安装方式
 
-### 4. 可能修改的项目文件
+### 方式 A：安装到当前项目
 
-Agent Relay 不应整文件覆盖，而是在现有文件中维护带边界的标记块：
+```bash
+cd /path/to/project
+npx skills add chopperH0824/agent-relay --skill agent-relay
+```
+
+安装器会让你选择检测到的 Agent。也可以明确指定：
+
+```bash
+DO_NOT_TRACK=1 npx skills add chopperH0824/agent-relay \
+  --skill agent-relay \
+  --agent codex \
+  --copy \
+  --yes
+```
+
+### 方式 B：全局安装安装器
+
+适合在多个项目中分别初始化：
+
+```bash
+DO_NOT_TRACK=1 npx skills add chopperH0824/agent-relay \
+  --skill agent-relay \
+  --global
+```
+
+全局安装只让 Agent 找到“一次性安装器”。每个目标项目仍需单独确认一次初始化范围。
+
+### 方式 C：GitHub CLI
+
+```bash
+gh skill preview chopperH0824/agent-relay agent-relay
+gh skill install chopperH0824/agent-relay agent-relay --scope user
+```
+
+可用发布标签固定供应链版本：
+
+```bash
+gh skill install chopperH0824/agent-relay agent-relay@v0.1.0 --scope user
+```
+
+## 初始化
+
+Skill 会先运行无副作用预览：
+
+```bash
+python3 scripts/relay.py init \
+  --project-root "/absolute/project/path" \
+  --dry-run \
+  --adapters auto
+```
+
+用户确认后才应用：
+
+```bash
+python3 scripts/relay.py init \
+  --project-root "/absolute/project/path" \
+  --adapters auto \
+  --yes
+```
+
+三种适配模式：
+
+| 模式 | 行为 |
+| --- | --- |
+| `minimal` | 只安装 `AGENTS.md`、通用 `.agents/skills/` 入口和 `.gitignore` 受管块 |
+| `auto` | 在 minimal 基础上，根据项目中已有 Harness 目录和规则文件补适配器；默认值 |
+| `all` | 生成 v0.1 提供的全部直接适配器，适合明确需要跨多 Harness 的项目 |
+
+初始化是幂等的：重复执行会更新同一个受管块，不会追加副本。已有文件在修改前备份；符号链接、项目外路径和现有非 Relay Skill 不会被覆盖。
+
+## 初始化后怎么用
+
+用户继续像平常一样提需求。项目指令要求 Agent 在实质修改前认领任务：
+
+```bash
+python3 .agent-relay/relay.py start \
+  --title "实现导出接口" \
+  --owner "pi:session-12" \
+  --scope "src/export/**" \
+  --scope "tests/export/**"
+```
+
+长任务保存接手点：
+
+```bash
+python3 .agent-relay/relay.py checkpoint \
+  --task-id "task-id" \
+  --summary "导出逻辑完成，正在补错误分支" \
+  --changed "src/export/service.py" \
+  --verify "focused tests passed" \
+  --next-step "补充超时测试"
+```
+
+结束时释放租约并刷新交接：
+
+```bash
+python3 .agent-relay/relay.py finish \
+  --task-id "task-id" \
+  --result "导出接口和错误处理已完成" \
+  --changed "src/export/service.py" \
+  --changed "tests/export/test_service.py" \
+  --verify "python3 -m unittest passed" \
+  --next-step "等待接口评审"
+```
+
+记录只包含可交接事实，不保存完整聊天或隐藏思维过程。
+
+## 快速状态汇报
+
+```bash
+python3 .agent-relay/relay.py report
+python3 .agent-relay/relay.py report --full
+python3 .agent-relay/relay.py report --json
+```
+
+默认输出固定为 10 行左右：
 
 ```text
-<!-- agent-relay:start -->
-...由 Agent Relay 管理的项目交接入口...
-<!-- agent-relay:end -->
+Agent Relay report
+Health: healthy
+Project goal: 发布 v0.1.0
+Active work: task-id · owner · docs/**
+Last completed: 安装器和运行时测试通过
+Version state: v001; unsealed changes: 2; storage: 18.4 KB
+Environment: Pi · gpt-5.6 · shell, browser
+Blockers: None
+Next step: 创建 GitHub Release
+Updated: 2026-08-28T09:00:00Z · event-id
 ```
 
-| 文件 | 修改方式 | 原因 |
+`report` 无副作用：不认领任务、不刷新租约、不创建事件、不改写 `HANDOFF.md`，并使用 Git 的 `--no-optional-locks` 模式读取工作区状态。
+
+| 健康状态 | 含义 |
+| --- | --- |
+| `healthy` | 状态、入口和租约一致 |
+| `stale` | 状态可读，但租约过期或 HANDOFF 落后 |
+| `degraded` | 必要文件、适配器或环境引用损坏/缺失 |
+| `uninitialized` | 当前项目没有有效初始化 |
+
+机器接口遵循 [`report.schema.json`](./skills/agent-relay/assets/report.schema.json)。
+
+## 目标与动作
+
+```bash
+python3 .agent-relay/relay.py goal add "完成 v0.2" \
+  --kind explicit \
+  --scope long-term
+
+python3 .agent-relay/relay.py goal list
+python3 .agent-relay/relay.py goal update "goal-id" --status completed
+```
+
+- 用户明确说出的目标标记为 `explicit`。
+- Agent 推断的目标只能标记为 `candidate`。
+- 目标可完成、暂停或被替代。
+- 目标不能覆盖当前用户请求。
+
+任务、检查点、完成、目标变化、初始化和封版都使用“一事件一 JSON 文件”，避免多个 Agent 同时追加一个大日志。
+
+## 多 Agent 协作
+
+```mermaid
+flowchart LR
+    A[Agent A 认领 src/api/**] --> C{Agent B 写范围重叠?}
+    B[Agent B 准备开始] --> C
+    C -- 否 --> D[允许并行]
+    C -- 是 --> E[等待 / 拆任务 / 独立 worktree]
+```
+
+| 情况 | 处理 |
+| --- | --- |
+| 不同任务，写范围不重叠 | 允许并行 |
+| 路径、glob 或字面前缀重叠 | 阻止第二个写入者 |
+| 活跃任务租约过期 | 标记 `expired`，新任务可审计式接手 |
+| 已完成任务再次更新 | 拒绝，避免重复完成事件 |
+| 只读任务 | 可以不声明 `--scope` |
+| 必须并行改同一模块 | 使用独立 Git worktree 后审查合并 |
+
+v0.1 的锁保证面向同一台电脑的本地文件系统；不承诺跨机器、NFS、Dropbox 或网盘同步目录的强一致性。
+
+## 版本封存
+
+Agent 只有在完整语义明确表示“现在定版/立即交付”时才执行封版。单独的“可以了”如果范围不清楚，必须先问。
+
+先预览：
+
+```bash
+python3 .agent-relay/relay.py seal \
+  --artifact "dist/final.pdf" \
+  --dry-run
+```
+
+确认后创建不可覆盖版本：
+
+```bash
+python3 .agent-relay/relay.py seal \
+  --artifact "dist/final.pdf" \
+  --label "客户交付" \
+  --summary "已确认的最终文件" \
+  --yes
+```
+
+结果位于 `.agent-relay/versions/v001/`、`v002/` 等目录。每个复制文件记录大小和 SHA-256；`doctor` 会检查篡改。Git 代码项目也可以不复制文件，只封存当前 `HEAD` 和工作区状态；Agent Relay 不会自动 commit。
+
+默认单次 artifact 上限为 100 MiB，符号链接、项目根目录和 `.agent-relay/` 自身不能作为交付范围。
+
+## 命令
+
+| 命令 | 作用 | 是否修改状态 |
 | --- | --- | --- |
-| `AGENTS.md` | 不存在则创建；存在则插入受管块 | 跨 Harness 主入口 |
-| `CLAUDE.md` | 按需创建或加入 `@AGENTS.md` 引用 | Claude Code 不直接读取 `AGENTS.md` 时适配 |
-| `GEMINI.md` | 按需创建或导入 `AGENTS.md` | Gemini 项目上下文适配 |
-| `.cursor/rules/agent-relay.mdc` | 检测到 Cursor 或选择全适配时创建 | 增强 Cursor 的常驻加载 |
-| `.github/copilot-instructions.md` | 仅在需要兼容旧配置时插入受管块 | GitHub Copilot 适配 |
-| `.gitignore` | 插入受管忽略块 | 排除锁、缓存、本机路径和可选版本副本 |
+| `init --dry-run` | 预览安装计划 | 否 |
+| `init --yes` | 安装或更新项目能力 | 是 |
+| `start` | 创建任务、环境快照和写入租约 | 是 |
+| `checkpoint` | 保存接手点并续租 | 是 |
+| `finish` | 完成/阻塞/取消任务并释放租约 | 是 |
+| `goal` | 管理明确或候选目标 | 视子命令 |
+| `report [--full\|--json]` | 快速汇报当前情况 | 否 |
+| `status [--json]` | 展开规范状态 | 否 |
+| `doctor [--json]` | 检查 Schema、入口、校验值和秘密模式 | 否 |
+| `seal --yes` | 创建不可覆盖版本 | 是 |
+| `uninstall` | 移除受管入口和运行时，保留历史 | 是 |
+| `purge` | 显式确认后永久删除 Relay 数据 | 是，破坏性 |
 
-所有修改在写入前生成备份。重复运行 `init` 必须是幂等的，不重复插入标记块。
+运行 `python3 .agent-relay/relay.py --help` 查看全部参数。
 
-### 5. 日常任务期间的写入
+## 它会修改什么
 
-- 创建或更新本次任务文件；
-- 创建简短事件记录；
-- 更新环境快照引用；
-- 原子刷新 `HANDOFF.md`；
-- 释放任务租约；
-- 用户明确封版时，将选定交付物复制到版本目录并计算 SHA-256；
-- 不默认复制整个仓库。
+### Skill 安装阶段
 
-版本副本会占用磁盘空间。`status` 应展示版本目录大小，清理任何已封版本必须要求明确确认。
+安装工具会把仓库中的 `skills/agent-relay/` 复制或链接到所选 Harness 的项目级或用户级 Skill 目录。具体位置由安装工具和 `--agent` / `--scope` 决定。
 
-## 它不会对电脑做什么
+### `init` 阶段
 
-默认模式下，Agent Relay **不会**：
-
-- 请求 `sudo`、管理员权限或系统扩展权限；
-- 安装开机启动项、LaunchAgent、Windows 服务、计划任务或后台守护进程；
-- 长期监听端口、键盘、鼠标、剪贴板或浏览器活动；
-- 读取 macOS Keychain、系统凭据库、浏览器 Cookie 或登录会话；
-- 读取 SSH 私钥内容；
-- 保存 Token、密码、Cookie、私钥、完整环境变量值或 MCP 密钥；
-- 上传项目、交接记录或环境快照到 Agent Relay 服务器；
-- 发送遥测；
-- 自动执行 `git commit`、`git push`、创建 PR 或发布版本；
-- 自动修改用户级 Harness、MCP、Shell、Git 或 SSH 配置；
-- 删除已有项目文件或覆盖已封版本；
-- 读取其他 Harness 的私有聊天历史；
-- 保存模型的隐含思维过程或完整对话副本。
-
-Skill 下载工具、GitHub、模型提供商和用户正在使用的 Harness 可能各自有网络和遥测策略，它们不属于 Agent Relay。README 会尽量明确区分这些边界。
-
-## 项目内文件结构
+始终创建或维护：
 
 ```text
 project/
 ├── AGENTS.md
-├── CLAUDE.md                       # 按需
-├── GEMINI.md                       # 按需
-├── .agents/
-│   └── skills/
-│       └── agent-relay/            # 可选的项目级桥接 Skill
+├── .agents/skills/agent-relay/SKILL.md
+├── .gitignore
 └── .agent-relay/
     ├── HANDOFF.md
     ├── relay.py
@@ -298,374 +372,223 @@ project/
     ├── tasks/
     ├── events/
     ├── versions/
-    ├── environments/
-    │   ├── shared/
-    │   └── local/
+    ├── environments/{shared,local}/
+    ├── integrations/workbuddy/README.md
     ├── backups/
     └── runtime/
 ```
 
-推荐的数据边界：
+`auto` 或 `all` 还可能写入：
 
-| 类型 | 是否适合提交 Git | 示例 |
-| --- | --- | --- |
-| 共享交接事实 | 是，经过脱敏后 | `HANDOFF.md`、目标、任务结果、版本清单 |
-| 本机环境 | 否 | 用户目录路径、本机 Harness 安装位置、SSH IdentityFile 路径 |
-| 运行时协调 | 否 | 锁、租约、PID、缓存 |
-| 大型版本副本 | 默认否 | PPT、视频、压缩包等交付物副本 |
+- `CLAUDE.md`、`GEMINI.md`、`CODEBUDDY.md`；
+- `.cursor/rules/agent-relay.mdc`；
+- `.github/copilot-instructions.md`；
+- `.qoder/skills/`、`.trae/skills/`、`.codebuddy/skills/`、`.qwen/skills/`、`.kimi/skills/`；
+- `.opencode/skills/`、`.cline/skills/`、`.pi/skills/`、`.windsurf/skills/`；
+- `.roo/skills/`、`.kilocode/skills/`、`.continue/skills/`、`.kiro/skills/`、`.goose/skills/`、`.openhands/skills/`。
 
-## 日常工作流程
-
-```mermaid
-flowchart LR
-    A[读取 HANDOFF] --> B[创建或认领任务]
-    B --> C{当前能力足够?}
-    C -- 是 --> D[执行并验证]
-    C -- 否 --> E[说明差异并确认替代方案]
-    E -- 接受 --> D
-    E -- 不接受 --> F[记录阻塞]
-    D --> G[记录结果并刷新 HANDOFF]
-```
-
-每次记录只包含可交接事实：问题摘要、采取的动作、修改文件、验证结果、遗留事项和下一步。它不应记录逐步思维链。
-
-## 快速状态汇报
-
-当用户说“汇报一下当前情况”“现在做到哪了”“检查 agent-relay”或类似表达时，Agent 不需要逐个读取历史事件。它应运行只读命令：
-
-```bash
-python .agent-relay/relay.py report
-```
-
-默认报告采用固定结构，适合 Agent 直接转述：
+已有说明文件只插入以下边界块：
 
 ```text
-Agent Relay 快报
-健康状态：healthy / degraded / stale / uninitialized
-项目目标：明确目标、候选目标或“未记录”
-当前任务：任务 ID、负责人、进度和写入范围
-最近完成：最近一次结果与验证
-版本状态：最新封版、未封版改动和版本目录大小
-当前环境：Harness、模型、关键能力和环境变化
-阻塞风险：文件冲突、过期租约、能力缺失或“无”
-下一步：一个可以安全继续的动作
-更新时间：状态来源的时间和事件 ID
+<!-- agent-relay:start -->
+...Agent Relay 管理内容...
+<!-- agent-relay:end -->
 ```
 
-计划支持三种输出：
+修改前副本保存在 `.agent-relay/backups/<timestamp>/`。本机路径、锁、备份和版本 artifact 默认被 Git 忽略。
 
-| 命令 | 输出 | 用途 |
-| --- | --- | --- |
-| `relay report` / `relay report --short` | 约 8–10 行 Markdown | 对用户快速汇报 |
-| `relay report --full` | 展开目标、任务、版本和环境差异 | 交接、审查和排障 |
-| `relay report --json` | 稳定的机器可读结构 | Hook、MCP、脚本和其他 Agent 调用 |
+## 它不会做什么
 
-`report` 是无副作用的只读操作：不认领任务、不刷新租约、不创建事件，也不改写 `HANDOFF.md`。它只读取 `.agent-relay/` 的规范状态，并进行轻量一致性检查；典型本地项目的设计目标是在数秒内完成。
+Agent Relay 默认不会：
 
-三个检查命令职责不同：
+- 请求 `sudo` 或管理员权限；
+- 安装后台服务、开机启动项或监听端口；
+- 读取 Keychain、浏览器 Cookie、SSH 私钥内容或其他 Harness 私有聊天；
+- 保存 Token、密码、Cookie、私钥、完整环境变量、完整对话或隐藏思维过程；
+- 上传项目或 Relay 状态到 Agent Relay 服务器；
+- 发送遥测；
+- 自动 commit、push、创建 PR 或发布；
+- 自动修改用户级 Harness、Shell、Git、SSH 或 MCP 配置；
+- 覆盖现有非 Relay Skill、符号链接或已封版本；
+- 扫描用户确认项目以外的文件。
 
-| 命令 | 回答的问题 |
-| --- | --- |
-| `relay report` | “项目现在是什么情况？” |
-| `relay status` | “底层目标、任务、版本和租约分别是什么？” |
-| `relay doctor` | “安装、Schema、权限和 Harness 入口是否正常？” |
-
-如果 `HANDOFF.md` 比最新事件旧、任务租约过期、版本清单校验失败或当前 Harness 缺少历史能力，报告必须显示 `degraded` 或 `stale`，不能给出虚假的绿色状态。
-
-## 目标、动作、版本和环境记录
-
-### 目标
-
-- 没有识别到全局目标时保持空白。
-- 用户明确表达的目标标记为 `explicit`。
-- Agent 推断出的目标只标记为 `candidate`，不能假装用户已经确认。
-- 目标分长期和短期，可以暂停、完成或被后续目标替代。
-- 目标只用于防止遗忘，不用于拒绝当前请求。
-
-### 动作
-
-任务开始、重要检查点、任务完成或发生阻塞时记录：
-
-- 用户问题的简短摘要；
-- 可公开解释的方案和关键决策；
-- 创建、修改和删除的文件；
-- 关键命令及验证结果；
-- 当前状态、阻塞原因和下一步；
-- Harness、模型、会话和环境快照引用。
-
-### 版本
-
-只有完整语义表示“现在需要交付”时才自动封版：
-
-| 用户表达 | 默认行为 |
-| --- | --- |
-| “定版”“最终版”“就按这个发” | 自动封版 |
-| “现在发给领导/同事/客户” | 发送前自动封版 |
-| “可以了”“就这样” | 结合上下文；范围不明确时询问 |
-| “以后要发”“先继续改” | 不封版 |
-
-封版流程：识别交付范围 → 临时复制 → 计算校验值 → 汇总自上个版本以来的事件 → 原子保存为 `v001`、`v002` → 继续维护工作副本。
-
-对于代码项目，默认记录 Git 提交引用或工作区清单，不自动创建提交。对于 Office、图片、音视频等二进制交付物，保存选定文件的实际副本。
-
-### 环境
-
-每次动作只引用环境快照 ID。只有环境发生变化时才创建新快照。
-
-可记录：
-
-- 操作系统、架构、Shell、Harness 和模型；
-- 可用工具能力，例如 Shell、浏览器、computer use、网络、Office、图片生成；
-- Skill、MCP、插件的名称、版本和脱敏配置路径；
-- Git、SSH 命令路径、SSH Host alias、公钥指纹和最近验证时间。
-
-如果历史任务依赖 `computer-use`，当前 Harness 只有 DOM 浏览器工具，Agent 必须说明缺少的能力、最近替代方案及结果差异，并在采用实质不同的方法前取得用户同意。
-
-## 多 Agent 协作
-
-每个任务包含唯一 ID、负责人、状态、依赖、租约、心跳和写入范围。
-
-```mermaid
-flowchart LR
-    A[Agent A 认领 src/api/**] --> C{Agent B 的写入范围重叠?}
-    B[Agent B 准备开始] --> C
-    C -- 否 --> D[允许并行]
-    C -- 是 --> E[等待、拆分任务或使用独立 worktree]
-```
-
-| 情况 | 处理 |
-| --- | --- |
-| 不同任务且写入范围不重叠 | 允许并行 |
-| 写入范围重叠 | 阻止第二个写入者 |
-| 原 Agent 长时间无心跳 | 租约过期后记录原因并接管 |
-| 必须同时修改同一模块 | 使用独立 Git worktree，再审查合并 |
-| 只读取同一文件 | 允许并行 |
-
-同一工作目录只适合并行修改互不重叠的路径。网络文件系统、云盘同步目录和跨机器锁不属于首版可靠性范围。
-
-## Harness 兼容策略
-
-Agent Skills 和项目指令在不同 Harness 中的加载方式并不一致。Agent Relay 使用“**一份规范状态 + 多个薄适配器 + `doctor` 实测**”，并按证据等级区分兼容性。以下资料核对于 **2026-08-28**；这里描述的是计划适配范围，不代表当前仓库已经完成端到端测试。
-
-### 兼容等级
-
-| 等级 | 含义 |
-| --- | --- |
-| **A：官方机制已核实** | 官方文档明确支持 `SKILL.md`、`AGENTS.md` 或项目常驻规则，可设计直接适配器 |
-| **B：标准生态可接入** | Agent Skills/AGENTS.md 生态或安装工具已有路径，但 Agent Relay 尚需逐产品实测 |
-| **C：桥接适配** | 产品有自定义 Skill/Rules/文件夹能力，但格式或加载方式不是通用标准，需要转换包或手动导入 |
-| **D：待研究** | 暂未找到稳定的公开项目指令或 Skill 接口，只能提供手动引导，不承诺自动接入 |
-
-### 官方机制已核实的热门产品
-
-| 产品 / Harness | 计划入口 | 等级 | 说明 |
-| --- | --- | --- | --- |
-| OpenAI Codex | `AGENTS.md` + `.codex/skills/` | A | 根到当前目录的项目指令链 |
-| Claude Code | `CLAUDE.md` → `@AGENTS.md` + `.claude/skills/` | A | 用导入保持单一事实源 |
-| Cursor | `AGENTS.md` + `.agents/skills/` / `.cursor/skills/` | A | 可增加 always-on Cursor Rule |
-| GitHub Copilot / VS Code | `AGENTS.md` + `.agents/skills/` / `.github/skills/` | A | 覆盖 IDE、CLI 和 cloud agent 入口 |
-| Gemini CLI | `GEMINI.md` → `@./AGENTS.md` + `.gemini/skills/` | A | 也可配置 context filename |
-| Qoder IDE / Qoder CLI / Qoder 智能体工作台（常被称作 Qoder Work） | `AGENTS.md` + `.qoder/skills/` | A | 官方 Rules 自动识别 `AGENTS.md`；IDE 与 CLI 共用 Skill 机制 |
-| Qoder CN CLI（通义灵码文档体系） | `AGENTS.md` + `.qoder/skills/`；用户级 `~/.qoder-cn/skills/` | A | 支持自动和手动触发 `SKILL.md` |
-| TRAE Code | `AGENTS.md` + `.trae/skills/`；可选 `.agents/skills/` | A | 需在设置中启用 AGENTS 和 `.agents` 导入开关 |
-| TraeWork | `.trae/skills/` 或上传含根级 `SKILL.md` 的 `.zip` / `.skill` | A | 本地与云端任务环境不同，安装器需记录运行环境 |
-| 腾讯 CodeBuddy IDE / CodeBuddy Code CLI | `CODEBUDDY.md` + `.codebuddy/skills/` | A | `CODEBUDDY.md` 会话常驻，Skill 按需加载 |
-| Qwen Code | `.qwen/skills/` | A | 官方 Agent Skills；项目 Skill 可随 Git 共享 |
-| Kimi Code CLI | `.agents/skills/` / `.kimi/skills/` | A | 官方支持通用 Agent Skills，并兼容 Claude/Codex Skill 目录 |
-| OpenCode | `AGENTS.md` + `.opencode/skills/` | A | 原生按需加载 Agent Skills |
-| Cline | `AGENTS.md` + `.cline/skills/` / `.clinerules/` | A | 可识别多种跨工具规则来源 |
-| Pi | 项目 Skill + `AGENTS.md` | A | 通过 Agent Skills 和项目指令接入 |
-
-### 标准生态适配目标
-
-以下工具已进入 Agent Skills 安装生态或 `AGENTS.md` 生态。首版会生成标准入口，再由 `relay doctor` 标记 `verified`、`partial` 或 `manual`：
-
-| 产品 / Harness | 候选入口 | 等级 |
-| --- | --- | --- |
-| Windsurf / Cascade | `AGENTS.md` + `.windsurf/skills/` / rules | B |
-| Roo Code | `AGENTS.md` + `.roo/skills/` | B |
-| Kilo Code | `AGENTS.md` + `.kilocode/skills/` | B |
-| Continue | `.continue/skills/` + Continue Rules | B |
-| Aider | `AGENTS.md`，并在配置中设置 `read` | B |
-| Amp | `AGENTS.md` + `.agents/skills/` | B |
-| Factory Droid | `AGENTS.md` + `.factory/skills/` | B |
-| Amazon Kiro / Kiro CLI | `.kiro/skills/` + agent resources | B |
-| JetBrains Junie | `AGENTS.md` + `.junie/skills/` | B |
-| Goose | `AGENTS.md` + `.goose/skills/` | B |
-| OpenHands | `.openhands/skills/` + 项目说明 | B |
-| Devin | `AGENTS.md` + Knowledge / Skills | B |
-| Warp | `AGENTS.md` / project rules | B |
-| Zed | `AGENTS.md` / Agent Rules | B |
-| Augment Code | `AGENTS.md` | B |
-| Google Jules | `AGENTS.md` | B |
-| Google Antigravity | `.agent/skills/` + 项目规则 | B |
-
-### 国产办公与开发 Agent 的桥接范围
-
-| 产品 | 已找到的官方机制 | 等级 | Agent Relay 计划 |
-| --- | --- | --- | --- |
-| 腾讯 WorkBuddy | 自定义 Skill 使用 `skill.yml` + 实现文件 + README；可操作授权文件夹 | C | 生成 WorkBuddy 桥接 Skill，让其只读调用 `relay report --json`，明确请求项目文件夹授权 |
-| 通义灵码 IDE | 编程智能体与规则能力；Qoder CN CLI 的 `SKILL.md` 已有官方文档 | C | 将 IDE 与 Qoder CN CLI 分开探测，避免错误复用目录 |
-| 百度文心快码 Comate | 公开产品具备 Agent/代码库能力，但未找到稳定的 Agent Skills/AGENTS 公开接口 | D | 只生成手动接手提示；发现官方入口后再升级 |
-| 智谱 CodeGeeX | 公开产品具备代码 Agent 能力，未核实标准项目 Skill 目录 | D | 使用手动项目说明，不声称自动加载 |
-| 华为 CodeArts Snap | 具备研发智能辅助能力，未核实通用 Skill/AGENTS 接口 | D | 保持手动模式并由 `doctor` 提示限制 |
-| Fitten Code | 具备 IDE Agent 能力，未核实通用项目规则接口 | D | 保持手动模式 |
-| iFlyCode / 讯飞智能编程助手 | 具备代码辅助能力，未核实通用项目规则接口 | D | 保持手动模式 |
-
-WorkBuddy、TraeWork 这类办公 Agent 可能同时处理文档、表格、PPT 和本地文件夹。适配器必须记录它获得的是哪个文件夹权限、运行在本地还是云端，并且不能默认把项目外的个人文件纳入扫描。
-
-兼容性报告会进入 `relay report`：显示当前检测到的 Harness、采用的入口、最近验证时间、兼容等级以及缺失能力。`A` 表示官方机制可用，不等于 Agent Relay 已完成该产品的实现测试。
-
-“兼容”也不代表项目文件能覆盖 Harness 的系统策略。系统、组织策略和用户当前明确消息拥有更高优先级。
+模型提供商、Harness、GitHub、`npx skills` 和 `gh skill` 有各自的网络与遥测政策，不属于 Agent Relay。
 
 ## 隐私与安全
 
-安全默认值：
+- Python 标准库实现，无运行时包依赖和网络请求。
+- 所有项目写入使用临时文件、`fsync` 和原子改名。
+- 敏感字段名、私钥块、常见 Token 前缀和赋值形式在落盘前脱敏。
+- `doctor` 扫描共享状态中的私钥和常见 Token 模式。
+- 共享环境和包含本机路径的 local 环境分开保存。
+- 封版目录从不覆盖，卸载只删除内容哈希未变化的 owned adapter。
+- `purge` 必须同时提供 `--yes --confirm <项目目录名>`。
 
-- 安装前显示 dry-run；
-- 不在 `SKILL.md` 中预批准不受限制的 Shell；
-- 所有写入限定在确认后的项目根目录；
-- 解析结构化配置，而不是复制整个配置文件；
-- 字段名命中 `token`、`secret`、`password`、`cookie`、`private_key` 等时拒绝落盘；
-- 共享环境和本机环境分开；
-- 一事件一文件，采用临时文件 + 原子改名；
-- 封版目录不可覆盖；
-- 已有说明文件修改前备份；
-- 不提供 Agent Relay 云端服务，不自动上传数据。
+详细威胁边界见 [Security and Privacy Reference](./skills/agent-relay/references/SECURITY.md)。
 
-仍需注意：任何 Skill 都可能指示 Agent 执行命令。安装前必须审查来源、`SKILL.md` 和脚本，并保留 Harness 的命令批准机制。
+## Harness 兼容策略
 
-## 计划中的命令
+“官方支持某种入口”“安装器能放入 Skill”“Agent Relay 已在真实产品中回归”是三件不同的事。本项目分别标注。
 
-| 命令 | 作用 |
-| --- | --- |
-| `relay init --dry-run` | 预览将发生的所有读取和写入 |
-| `relay init` | 为当前项目安装常驻能力 |
-| `relay start` | 建立会话环境、创建或认领任务 |
-| `relay checkpoint` | 长任务中记录安全接手点 |
-| `relay finish` | 记录结果、释放任务并刷新交接 |
-| `relay report [--short\|--full\|--json]` | 只读生成当前情况快报 |
-| `relay seal` | 创建不可变版本及版本历程 |
-| `relay status` | 查看目标、任务、冲突、版本和最近动作 |
-| `relay doctor` | 验证入口、Schema、权限和 Harness 适配 |
-| `relay uninstall` | 移除受管入口与运行时，默认保留历史数据 |
-| `relay purge` | 明确确认后删除交接数据和版本副本 |
+### v0.1 直接生成并由测试覆盖的入口
 
-首版计划使用 Python 标准库实现，不要求项目安装额外 Python 包。最低 Python 版本会在实现完成后确定。
+| 产品 / Harness | 入口 | 当前结论 |
+| --- | --- | --- |
+| Codex、Cursor、Copilot、Gemini CLI、Amp 等共享目录 Harness | `AGENTS.md` + `.agents/skills/` | 生成、幂等和 doctor 校验已测试 |
+| Claude Code | `CLAUDE.md` → `AGENTS.md` | 适配文件生成已测试；真实加载依赖产品策略 |
+| Gemini CLI | `GEMINI.md` → `AGENTS.md` | 适配文件生成已测试 |
+| Cursor | `.cursor/rules/agent-relay.mdc` | always-on Rule 生成已测试 |
+| GitHub Copilot | `.github/copilot-instructions.md` | 受管块生成已测试 |
+| Qoder / Qoder CN | `.qoder/skills/` + `AGENTS.md` | 官方入口已核实；适配文件生成已测试 |
+| TRAE Code / TraeWork | `.trae/skills/` + `AGENTS.md` | 官方入口已核实；本地/云端能力需分别验证 |
+| CodeBuddy | `CODEBUDDY.md` + `.codebuddy/skills/` | 适配文件生成已测试 |
+| Qwen Code | `.qwen/skills/` | 官方 Agent Skills 入口已核实 |
+| Kimi Code CLI | `.kimi/skills/` + `.agents/skills/` | 官方 Agent Skills 入口已核实 |
+| OpenCode、Cline、Pi | 各自 Skill 路径 + `AGENTS.md` | 适配文件生成已测试；Pi 通过 `npx skills` 实装测试 |
+
+### 标准生态入口
+
+`--adapters all` 还可以生成 Windsurf、Roo、Kilo、Continue、Kiro、Goose 和 OpenHands 的标准 Skill 路径。Aider、Factory Droid、Junie、Devin、Warp、Zed、Augment、Jules、Antigravity 等可继续使用 `AGENTS.md` 或通用 `.agents/skills/`，但 v0.1 不把“有生态路径”描述成完整产品回归。
+
+### WorkBuddy 与手动模式
+
+腾讯 WorkBuddy 的公开自定义 Skill 结构以 `skill.yml`、实现文件和 README 为主，但公开指南没有稳定字段级 Schema。v0.1 不生成猜测格式，只在 `.agent-relay/integrations/workbuddy/README.md` 提供安全桥接：授权单一项目文件夹，并只读调用 `relay report --json`。
+
+通义灵码 IDE 与 Qoder CN CLI 分开识别。文心快码 Comate、CodeGeeX、CodeArts Snap、Fitten Code、iFlyCode 等未核实稳定项目 Skill 入口的产品保持手动交接模式，不声称自动加载。
+
+完整路径和证据边界见 [Harness Adapter Reference](./skills/agent-relay/references/HARNESSES.md)。
+
+## 测试与验证
+
+当前测试覆盖：
+
+- Agent Skills 目录和 frontmatter；
+- dry-run 零写入；
+- 幂等受管块和备份；
+- minimal / auto / all 适配器；
+- 任务租约、过期处理和写范围冲突；
+- `report` 状态文件零变化；
+- 目标生命周期；
+- 秘密脱敏和 doctor 扫描；
+- artifact 封版、SHA-256 与篡改检测；
+- 安全卸载和显式 purge；
+- `npx skills` 本地发现与 Pi 目录实装。
+
+```bash
+python3 -m compileall -q skills/agent-relay/scripts tests
+python3 -m unittest discover -s tests -v
+DO_NOT_TRACK=1 npx --yes skills add . --list
+```
+
+GitHub Actions 在 Python 3.9、3.11 和 3.13 上运行同一测试套件。
 
 ## 卸载与恢复
 
-计划中的安全卸载流程：
+先预览：
 
 ```bash
-python .agent-relay/relay.py uninstall --dry-run
-python .agent-relay/relay.py uninstall
+python3 .agent-relay/relay.py uninstall --dry-run
 ```
 
-默认卸载只会：
+再移除项目能力：
 
-- 删除 Agent Relay 写入的受管标记块；
-- 删除项目级桥接 Skill 和运行脚本；
-- 保留 `events/`、`versions/`、`goals.json` 和备份；
-- 不删除用户原有项目指令。
+```bash
+python3 .agent-relay/relay.py uninstall --yes
+```
 
-彻底删除历史数据必须使用独立的 `purge` 操作并明确确认。
+默认卸载会：
 
-若 Skill 是全局安装的，可通过安装工具移除：
+- 从说明文件中删除 Agent Relay 受管块；
+- 删除内容未被本地修改的 owned adapter；
+- 删除项目内 `relay.py`；
+- 保留目标、事件、版本、HANDOFF 和备份；
+- 保留本地修改过的 adapter 并报告原因。
+
+彻底删除历史必须从安装 Skill 的脚本执行：
+
+```bash
+python3 scripts/relay.py purge \
+  --project-root "/absolute/project/path" \
+  --yes \
+  --confirm "project-directory-name"
+```
+
+移除全局 Skill 不会改动已经初始化的项目：
 
 ```bash
 npx skills remove --global agent-relay
 ```
 
-卸载全局 Skill 不会自动修改已经初始化的项目；项目能力和项目数据由各项目单独卸载。
+通过 GitHub CLI preview 安装时，先运行 `gh skill list` 定位当前 Harness 目录，再按该 Harness 的目录规则移除；当前 `gh skill` 手册尚未提供 remove 子命令。
 
 ## 限制
 
-- 项目指令属于上下文，不是系统级强制策略；不同模型的遵从程度可能不同。
-- 兼容矩阵中的 `A` 表示官方入口已核实，不表示 Agent Relay 已完成该 Harness 的实现和回归测试。
-- 部分 Harness 只有 Hook 才能保证固定生命周期动作，Hook 将作为可选增强，而不是默认修改全局配置。
-- Agent Relay 无法通用读取 Codex、Claude、Cursor 等产品之间的私有历史对话。
-- Agent 无法访问的信息必须标记为未知，不能推断成事实。
-- 语义封版存在歧义时必须询问，不能仅依赖关键词。
-- 首版并发保证面向同一台电脑的本地文件系统；不承诺 Dropbox、网盘、NFS 或跨机器强一致锁。
-- 大型二进制版本会占用磁盘空间，默认只保存明确交付物。
-- 当前仓库尚未发布可执行版本。
+- 项目规则是模型上下文，不是系统级强制策略；不同 Agent 的遵从程度可能不同。
+- v0.1 没有全局 Hook 或后台进程，生命周期动作由项目指令引导 Agent 调用。
+- 语义封版由 Agent 判断；底层 `seal` 只接受明确参数，不自行分析聊天。
+- Harness 适配文件通过测试不等于每个闭源产品都完成真实会话回归。
+- 无法访问的跨应用聊天保持未知，不会自动恢复。
+- 写范围冲突检测故意偏保守，复杂 glob 可能被视为冲突。
+- 本地锁不保证跨机器或网络文件系统强一致。
+- artifact 默认不提交 Git，且会占用本地磁盘。
+- Skill 本身拥有 Agent 授予的执行能力；安装前仍需代码审查和 Harness 命令批准。
 
-## 常见问题
+## FAQ
 
-### 初始化后还要每次调用 Skill 吗？
+### 初始化后每次都要调用 Skill 吗？
 
-不需要。首次初始化会把入口和运行时留在项目中。以后 Harness 自动读取项目指令，由 Agent 调用项目内运行时。
+不用。安装 Skill 只负责第一次 `init`。项目中的 `AGENTS.md`、项目级桥接 Skill、`HANDOFF.md` 和 `.agent-relay/relay.py` 维持后续能力。
 
-### 怎样让 Agent 快速汇报现在的情况？
+### 可以不使用 Git 吗？
 
-直接说“汇报一下当前情况”或“检查 agent-relay”。Agent 应运行 `relay report` 并按固定模板汇报；不需要读取全部历史日志，也不会因此认领任务或修改状态。
+可以。没有 Git 时使用当前确认目录作为根；封版必须明确提供 artifact，Git 状态显示为 unavailable。
 
-### 它是否一直在后台运行？
+### 会自动提交和推送吗？
 
-不是。没有守护进程、监听端口或开机启动项。只有 Agent 开始、检查点、完成和封版时执行短命令。
+不会。除非当前用户请求明确要求，否则 Agent Relay 不执行 commit、push、PR 或发布。
 
-### 它会把项目上传到云端吗？
+### “可以了”一定自动封版吗？
 
-Agent Relay 本身不会。你使用的模型、Harness、Git 托管和 Skill 下载工具可能有自己的网络策略，应分别审查。
+不一定。只有上下文明确表示完整交付物现在可以交付时才封版；范围不明必须先询问。
 
-### 它会修改现有 `AGENTS.md` 吗？
+### 为什么 report 和 status 分开？
 
-会，但只插入有明确起止标记的受管块，并在修改前备份。卸载时只移除该受管块。
+`report` 面向用户，固定输出当前情况；`status` 展开底层目标、任务、事件、版本和适配器；`doctor` 验证安装与完整性。
 
-### 没有 Git 可以使用吗？
+### 它会保存 MCP Token 或 SSH 私钥吗？
 
-计划支持。没有 Git 时以当前目录作为项目根，并使用文件清单和哈希记录版本；Git 相关能力会标记为不可用。
+不会。v0.1 不读取私钥内容，不复制完整 MCP 配置或环境变量；敏感字段和常见 Token 形式在落盘前脱敏。
 
-### 会自动提交或推送代码吗？
+### 多 Agent 如何避免撞文件？
 
-不会。除非用户在当前请求中明确要求，否则不会执行 commit、push、PR 或发布。
-
-### 能读取以前在其他 AI 应用里的聊天吗？
-
-通常不能。初始化只读取项目中可访问的事实和经授权的本地元数据。不可访问的历史保持空白。
-
-### “可以了”一定会触发定版吗？
-
-不一定。只有上下文明确表示整个交付物可以立即交付时才封版；否则询问范围。
-
-### 如何防止两个 Agent 同时修改同一文件？
-
-Agent 开始前认领任务和写入范围。重叠写入会被阻止；需要并行时使用拆分任务或独立 worktree。
-
-### 环境记录会保存 SSH 私钥或 MCP Token 吗？
-
-不会。只记录允许的名称、版本、路径和指纹；秘密字段和私钥内容禁止落盘。
+每个修改任务先声明项目相对写范围。活跃租约重叠时第二个任务失败，需等待、拆分或使用独立 worktree。
 
 ## 路线图
 
-- [x] 简化架构与数据边界
-- [x] 桌面、移动端可视化说明
-- [x] 双语 GitHub README
-- [x] 快速状态汇报协议与扩展 Harness 兼容矩阵
-- [ ] 符合 Agent Skills 规范的 `SKILL.md`
-- [ ] 幂等安装器、dry-run、备份和卸载
-- [ ] 文件式事件、任务租约和路径冲突检测
-- [ ] 目标、环境快照、能力差异协商和 `relay report`
-- [ ] 不可变版本封存和校验
-- [ ] 国际主流 Harness 的适配测试
-- [ ] Qoder、Qoder CN、TRAE Code、TraeWork、CodeBuddy、WorkBuddy、Qwen Code、Kimi Code CLI 的专项测试
-- [ ] 单元测试、故障恢复测试和首次 `v0.1.0` 发布
+- [x] Agent Skills 标准目录和一次性安装 Skill
+- [x] Python 标准库项目运行时
+- [x] dry-run、幂等受管块、备份、原子写入和卸载
+- [x] 目标、任务租约、事件、环境、快报和封版
+- [x] 直接 Harness 适配器与 WorkBuddy 手动桥接
+- [x] 测试矩阵、MIT License 和首个 `v0.1.0` Release
+- [ ] 为已核实产品增加真实会话兼容回归记录
+- [ ] 可选生命周期 Hook，不静默修改全局配置
+- [ ] `v0.2` Schema 迁移与跨 worktree 协调增强
 
 ## 文档
 
+- [Skill instructions](./skills/agent-relay/SKILL.md)
+- [Protocol reference](./skills/agent-relay/references/PROTOCOL.md)
+- [Harness reference](./skills/agent-relay/references/HARNESSES.md)
+- [Security reference](./skills/agent-relay/references/SECURITY.md)
 - [简化架构规格](./docs/agent-relay-simple.md)
-- [可视化架构页面](./docs/agent-relay-simple.html)
-- [Agent Skills Specification](https://agentskills.io/specification)
-- [AGENTS.md](https://agents.md/)
-- [skills CLI](https://github.com/antfu/skills-cli)
-- [Qoder Rules](https://docs.qoder.com/user-guide/rules) · [Qoder Skills](https://docs.qoder.com/extensions/skills) · [Qoder CN Skills](https://help.aliyun.com/zh/lingma/qoder-cn/user-guide/skills)
-- [TRAE Code Skills](https://docs.trae.ai/ide/skills) · [TRAE Code Rules](https://docs.trae.ai/ide/rules?ref) · [TraeWork Skills](https://docs.trae.ai/solo/skills?_lang)
-- [CodeBuddy Skills](https://www.codebuddy.ai/docs/ide/Features/Skills) · [CodeBuddy Best Practices](https://www.codebuddy.ai/docs/cli/best-practices) · [WorkBuddy Custom Skills](https://www.workbuddy.ai/docs/workbuddy/From-Beginner-to-Expert-Guide/Practice-Cases/Create-Skills)
-- [Qwen Code Skills](https://qwenlm.github.io/qwen-code-docs/en/users/features/skills/) · [Kimi Code CLI Skills](https://moonshotai.github.io/kimi-cli/en/customization/skills.html)
+- [可视化架构](./docs/agent-relay-simple.html)
+- [Changelog](./CHANGELOG.md)
+- [Contributing](./CONTRIBUTING.md)
+- [Security policy](./SECURITY.md)
 
-## 贡献与许可
+外部规范：[Agent Skills Specification](https://agentskills.io/specification) · [GitHub CLI Skill](https://cli.github.com/manual/gh_skill) · [npx skills](https://github.com/vercel-labs/skills) · [AGENTS.md](https://agents.md/)
 
-在首个可执行版本完成前，Issue 和设计反馈是最有价值的贡献。涉及安装器、安全边界、Harness 兼容或数据 Schema 的更改，应同时补充测试和中英文文档。
+## License
 
-本仓库当前尚未添加开源许可证。在许可证明确之前，不应假定仓库内容已获得复制、修改或再分发授权。
+[MIT](./LICENSE) © 2026 [chopperH0824](https://github.com/chopperH0824)

@@ -352,7 +352,7 @@
 <body>
   <header class="hero band">
     <div class="inner">
-      <div class="brandline"><span class="brandmark">Agent Relay</span><span>Persistent project handoff protocol</span></div>
+      <div class="brandline"><span class="brandmark">Agent Relay</span><span>v0.1.0 · Persistent project handoff protocol</span></div>
       <div class="hero-copy">
         <div class="eyebrow">一次安装，项目长期生效</div>
         <h1>Skill 只负责安装，<br>项目自己持续交接。</h1>
@@ -494,18 +494,21 @@
 └── .agent-relay/
     ├── HANDOFF.md
     ├── relay.py
+    ├── config.json
     ├── goals.json
     ├── tasks/
     ├── events/
     ├── versions/
-    ├── environments/
+    ├── environments/{shared,local}/
+    ├── integrations/
+    ├── backups/
     └── runtime/</pre>
           <div class="rules-list">
             <div class="rule"><span class="rule-index">01</span><div><strong>目标只提醒</strong><span>当前用户消息始终优先，不以历史目标阻止任务。</span></div></div>
             <div class="rule"><span class="rule-index">02</span><div><strong>环境按变化记录</strong><span>事件只引用快照 ID，避免重复保存整台电脑信息。</span></div></div>
             <div class="rule"><span class="rule-index">03</span><div><strong>不记录秘密</strong><span>禁止 Token、密码、Cookie、私钥和完整环境变量值。</span></div></div>
             <div class="rule"><span class="rule-index">04</span><div><strong>不编造历史</strong><span>跨 Harness 聊天不可访问时留空，从安装后开始沉淀。</span></div></div>
-            <div class="rule"><span class="rule-index">05</span><div><strong>安装可逆</strong><span>幂等、可预览、可卸载，不覆盖现有项目说明。</span></div></div>
+            <div class="rule"><span class="rule-index">05</span><div><strong>安装可逆</strong><span>v0.1.0 已实现 dry-run、幂等受管块、备份、doctor 与安全卸载。</span></div></div>
           </div>
         </div>
       </div>
@@ -513,6 +516,6 @@
 
     <section class="closing band"><div class="inner"><div><h2>最终体验：用户照常提需求</h2><p>Agent Relay 自动完成接手、认领、记录、汇报和封版。只有发生冲突、能力不匹配或定版范围模糊时，才需要用户做决定。</p></div><div class="command-line">install once → project stays relay-aware</div></div></section>
   </main>
-  <footer><div class="inner"><span>Agent Relay simplified architecture</span><span>Project-local · Harness-adapted · Secret-safe</span></div></footer>
+  <footer><div class="inner"><span>Agent Relay v0.1.0 · simplified architecture</span><span>Project-local · Harness-adapted · Secret-safe</span></div></footer>
 </body>
 </html>

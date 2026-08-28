@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Agent Relay 30-second demo</title>
+  <style>
+    :root {
+      --ink: #111b25;
+      --muted: #607080;
+      --canvas: #eef2f4;
+      --paper: #ffffff;
+      --line: #d7e0e5;
+      --blue: #2f63e9;
+      --teal: #0e9888;
+      --amber: #d98712;
+      --green: #2c914c;
+      --terminal: #111b25;
+      --terminal-line: #253544;
+      --terminal-text: #dce7ed;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; width: 100%; min-width: 960px; min-height: 540px; background: var(--canvas); font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: var(--ink); letter-spacing: 0; }
+    body { display: grid; place-items: center; }
+    .stage { width: 960px; height: 540px; padding: 26px 40px 24px; background: var(--canvas); overflow: hidden; }
+    .masthead { height: 58px; display: flex; align-items: flex-start; justify-content: space-between; }
+    .brand { display: flex; align-items: center; gap: 12px; font-weight: 800; font-size: 18px; }
+    .brand-mark { width: 18px; height: 18px; display: grid; grid-template-columns: 5px 5px; gap: 4px; align-items: end; }
+    .brand-mark span:first-child { height: 18px; background: var(--blue); }
+    .brand-mark span:last-child { height: 11px; background: var(--teal); }
+    .mast-copy { color: var(--muted); font-size: 13px; line-height: 1.45; text-align: right; }
+    .mast-copy strong { display: block; color: var(--ink); font-size: 14px; }
+    .demo-shell { height: 389px; background: var(--paper); border: 1px solid var(--line); border-radius: 6px; display: grid; grid-template-columns: 210px 1fr; overflow: hidden; box-shadow: 0 16px 36px rgba(17, 27, 37, 0.10); }
+    .rail { padding: 25px 22px; border-right: 1px solid var(--line); background: #f8fafb; display: flex; flex-direction: column; }
+    .phase-label { font-size: 11px; font-weight: 800; color: var(--blue); text-transform: uppercase; }
+    .phase-title { margin-top: 9px; font-size: 24px; line-height: 1.13; font-weight: 800; }
+    .phase-copy { margin-top: 10px; color: var(--muted); font-size: 13px; line-height: 1.55; }
+    .steps { margin-top: auto; display: grid; gap: 10px; }
+    .step { display: grid; grid-template-columns: 18px 1fr; gap: 8px; align-items: center; color: #85929e; font-size: 12px; }
+    .step i { display: grid; place-items: center; width: 18px; height: 18px; border: 1px solid #c8d3d9; border-radius: 50%; font-style: normal; font-size: 9px; font-weight: 700; }
+    .step.active { color: var(--ink); font-weight: 700; }
+    .step.active i { border-color: var(--blue); background: var(--blue); color: white; }
+    .step.done i { border-color: var(--teal); background: var(--teal); color: white; }
+    .terminal-wrap { padding: 20px; background: var(--paper); }
+    .terminal { height: 100%; border-radius: 5px; overflow: hidden; background: var(--terminal); border: 1px solid #0a1118; }
+    .terminal-bar { height: 39px; display: flex; align-items: center; justify-content: space-between; padding: 0 15px; border-bottom: 1px solid var(--terminal-line); color: #94a8b5; font-size: 11px; }
+    .lights { display: flex; gap: 7px; }
+    .lights span { width: 8px; height: 8px; border-radius: 50%; background: #405262; }
+    .lights span:nth-child(1) { background: #d66a5e; }
+    .lights span:nth-child(2) { background: #d6a14b; }
+    .lights span:nth-child(3) { background: #4ba86c; }
+    .terminal-body { height: calc(100% - 39px); padding: 17px 19px; font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace; font-size: 12.5px; line-height: 1.58; color: var(--terminal-text); overflow: hidden; }
+    .line { min-height: 20px; white-space: pre-wrap; overflow-wrap: anywhere; }
+    .line + .line { margin-top: 1px; }
+    .user { color: #ffffff; }
+    .label { display: inline-block; min-width: 58px; color: #7ea4ff; font-weight: 700; }
+    .command { color: #ffffff; }
+    .prompt { color: #5dd0bd; font-weight: 700; }
+    .create { color: #77d894; }
+    .modify { color: #f0bb62; }
+    .muted { color: #8296a4; }
+    .healthy { color: #77d894; font-weight: 700; }
+    .key { color: #7ea4ff; }
+    .cursor { display: inline-block; width: 7px; height: 14px; margin-left: 3px; vertical-align: -2px; background: #dce7ed; opacity: 0.8; }
+    .progress { height: 6px; margin-top: 12px; background: #dce4e8; overflow: hidden; }
+    .progress span { display: block; height: 100%; width: 0; background: var(--blue); }
+    .footer { margin-top: 7px; display: flex; justify-content: space-between; color: #71808d; font-size: 10px; line-height: 12px; }
+  </style>
+</head>
+<body>
+  <main class="stage" aria-label="Agent Relay workflow demo">
+    <header class="masthead">
+      <div class="brand"><span class="brand-mark"><span></span><span></span></span>Agent Relay</div>
+      <div class="mast-copy"><strong>Install once. Keep project memory.</strong>Agent Skills · Python 3.9+ · No daemon</div>
+    </header>
+    <section class="demo-shell">
+      <aside class="rail">
+        <div class="phase-label" id="phaseLabel">01 / Trigger</div>
+        <div class="phase-title" id="phaseTitle">Ask once.</div>
+        <div class="phase-copy" id="phaseCopy">The installer previews every project change before applying it.</div>
+        <div class="steps" id="steps"></div>
+      </aside>
+      <div class="terminal-wrap">
+        <div class="terminal">
+          <div class="terminal-bar"><span class="lights"><span></span><span></span><span></span></span><span>project · agent-relay</span></div>
+          <div class="terminal-body" id="terminalBody"></div>
+        </div>
+      </div>
+    </section>
+    <div class="progress"><span id="progressFill"></span></div>
+    <div class="footer"><span>Trigger → dry-run → initialize → work → seal → report</span><span id="elapsed">00:00 / 00:30</span></div>
+  </main>
+  <script>
+    const phases = [
+      {
+        label: '01 / Trigger', title: 'Ask once.', copy: 'The installer starts with an explicit, reviewable request.',
+        lines: [
+          '<span class="label">USER</span><span class="user">Use agent-relay to initialize this project.</span>',
+          '<span class="label"></span><span class="user">Show the dry-run first, then apply and run doctor.</span>',
+          '',
+          '<span class="label">AGENT</span><span class="muted">Locating the Git root and reviewing existing instructions...</span>'
+        ]
+      },
+      {
+        label: '02 / Dry-run', title: 'See every write.', copy: 'No file changes until the installation scope is approved.',
+        lines: [
+          '<span class="prompt">$</span> <span class="command">relay init --dry-run --adapters auto</span>',
+          '',
+          '<span class="create">CREATE</span>    .agent-relay/relay.py',
+          '<span class="create">CREATE</span>    .agent-relay/HANDOFF.md',
+          '<span class="modify">MODIFY</span>    AGENTS.md  <span class="muted">(backup first)</span>',
+          '<span class="create">CREATE</span>    .agents/skills/agent-relay/SKILL.md',
+          '<span class="muted">SKIP      existing non-Relay files</span>',
+          '',
+          '<span class="healthy">No files were written.</span>'
+        ]
+      },
+      {
+        label: '03 / Initialize', title: 'Leave capability.', copy: 'The project now carries its own runtime, handoff, and adapters.',
+        lines: [
+          '<span class="prompt">$</span> <span class="command">relay init --adapters auto --yes</span>',
+          '<span class="healthy">Agent Relay 0.1.0 initialized</span>',
+          '<span class="muted">Event: event-20260828T090000Z</span>',
+          '',
+          '<span class="prompt">$</span> <span class="command">python3 .agent-relay/relay.py doctor</span>',
+          '<span class="healthy">HEALTHY</span>   schema · state · adapters · secret scan',
+          '<span class="healthy">PASS</span>      integrity checks',
+          '',
+          '<span class="muted">Future agents discover the protocol from this project.</span>'
+        ]
+      },
+      {
+        label: '04 / Work', title: 'Claim, then finish.', copy: 'Write scopes keep concurrent agents away from the same files.',
+        lines: [
+          '<span class="prompt">$</span> <span class="command">relay start --title "Build release" --scope "skills/**"</span>',
+          '<span class="key">TASK</span>      task-20260828-build-release',
+          '<span class="key">LEASE</span>     120 minutes · owner pi:session-12',
+          '<span class="key">SCOPE</span>     skills/**',
+          '',
+          '<span class="prompt">$</span> <span class="command">relay finish --result "Runtime and tests complete"</span>',
+          '<span class="healthy">COMPLETED</span> task lease released',
+          '<span class="healthy">VERIFIED</span>  16 tests passed'
+        ]
+      },
+      {
+        label: '05 / Seal', title: 'Protect delivery.', copy: 'Explicit finalization creates a new version without overwriting drafts.',
+        lines: [
+          '<span class="label">USER</span><span class="user">This is the final version. Ship it.</span>',
+          '',
+          '<span class="prompt">$</span> <span class="command">relay seal --artifact dist/agent-relay.zip --yes</span>',
+          '<span class="healthy">SEALED</span>    v001 · 1 artifact',
+          '<span class="key">SHA-256</span>   5f8c...91ac',
+          '<span class="key">MANIFEST</span>  .agent-relay/versions/v001/manifest.json',
+          '',
+          '<span class="muted">Working files remain editable. v001 cannot be overwritten.</span>'
+        ]
+      },
+      {
+        label: '06 / Report', title: 'Answer in seconds.', copy: 'Any later agent reads one canonical, side-effect-free status report.',
+        lines: [
+          '<span class="prompt">$</span> <span class="command">python3 .agent-relay/relay.py report</span>',
+          '<span class="healthy">Health: healthy</span>',
+          '<span class="key">Project goal:</span> Publish Agent Relay v0.1.0',
+          '<span class="key">Active work:</span> None',
+          '<span class="key">Last completed:</span> Runtime and tests complete',
+          '<span class="key">Version state:</span> v001 · sealed',
+          '<span class="key">Blockers:</span> None',
+          '<span class="key">Next step:</span> Continue from the current user request',
+          '',
+          '<span class="healthy">Next agent is ready.</span>'
+        ]
+      }
+    ];
+    const names = ['Trigger', 'Dry-run', 'Initialize', 'Work', 'Seal', 'Report'];
+    const body = document.getElementById('terminalBody');
+    const steps = document.getElementById('steps');
+    function renderDemo(progress) {
+      const p = Math.max(0, Math.min(0.999999, progress));
+      const exact = p * phases.length;
+      const index = Math.floor(exact);
+      const local = exact - index;
+      const phase = phases[index];
+      document.getElementById('phaseLabel').textContent = phase.label;
+      document.getElementById('phaseTitle').textContent = phase.title;
+      document.getElementById('phaseCopy').textContent = phase.copy;
+      const visible = Math.max(1, Math.ceil(local * (phase.lines.length + 1)));
+      body.innerHTML = phase.lines.slice(0, visible).map(line => `<div class="line">${line || '&nbsp;'}</div>`).join('') + '<span class="cursor"></span>';
+      steps.innerHTML = names.map((name, i) => `<div class="step ${i < index ? 'done' : ''} ${i === index ? 'active' : ''}"><i>${i < index ? '✓' : i + 1}</i><span>${name}</span></div>`).join('');
+      document.getElementById('progressFill').style.width = `${progress * 100}%`;
+      const seconds = Math.min(30, Math.floor(progress * 30));
+      document.getElementById('elapsed').textContent = `00:${String(seconds).padStart(2, '0')} / 00:30`;
+    }
+    window.renderDemo = renderDemo;
+    let started = performance.now();
+    function animate(now) {
+      if (!window.__manualDemo) {
+        renderDemo(((now - started) % 30000) / 30000);
+        requestAnimationFrame(animate);
+      }
+    }
+    renderDemo(0);
+    requestAnimationFrame(animate);
+  </script>
+</body>
+</html>

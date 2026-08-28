@@ -1,0 +1,14 @@
+# Python caches
+__pycache__/
+*.py[cod]
+
+# macOS
+.DS_Store
+
+# Local test and visual-render output
+.coverage
+htmlcov/
+docs/demo-frames/
+
+# Local Agent Skills installer state
+skills-lock.json
