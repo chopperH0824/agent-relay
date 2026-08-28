@@ -11,11 +11,14 @@
 </p>
 
 <p align="center">
-  <img src="./docs/demo.gif" alt="Agent Relay 从触发初始化到生成项目状态快报的 30 秒演示" width="900">
+  <img src="./docs/demo.gif" alt="Agent Relay 从 Agent 自动安装 Skill 到生成项目状态快报的 30 秒演示" width="900">
 </p>
 
-```bash
-npx skills add chopperH0824/agent-relay --skill agent-relay
+<p align="center"><strong>推荐：把下面这条消息直接发给 Agent</strong></p>
+
+```text
+请帮我在当前项目安装并启用 Agent Relay：
+https://github.com/chopperH0824/agent-relay
 ```
 
 <p align="center">
@@ -30,15 +33,24 @@ npx skills add chopperH0824/agent-relay --skill agent-relay
 
 ## Quick Start
 
-安装上面的 Skill 后，在目标项目里只说一句：
+在目标项目里，把上面那条消息发给有 Shell 和网络权限的 Agent。它会审查 Skill、识别当前 Harness、执行安装，并预览项目初始化范围；你只需要确认它展示的文件改动。
+
+初始化完成后正常提需求即可。想看状态，直接问：
+
+> **项目现在做到哪了？**
+
+<details>
+<summary><strong>手动安装（Agent 没有 Shell 或网络权限）</strong></summary>
+
+```bash
+npx skills add chopperH0824/agent-relay --skill agent-relay
+```
+
+安装后对 Agent 说：
 
 > **启用 Agent Relay**
 
-就这样。Agent 会自己预览改动、请你确认一次，然后完成初始化和自检。以后正常提需求即可，不用再调用 Skill 或记命令。
-
-想看状态，直接问：
-
-> **项目现在做到哪了？**
+</details>
 
 ## 适用与不适用
 
@@ -106,7 +118,20 @@ flowchart LR
 
 ## 安装方式
 
-### 方式 A：安装到当前项目
+### 方式 A（推荐）：由 Agent 安装
+
+在目标项目中发送：
+
+```text
+请帮我在当前项目安装并启用 Agent Relay：
+https://github.com/chopperH0824/agent-relay
+```
+
+Agent 应先审查 [`SKILL.md`](./skills/agent-relay/SKILL.md) 和运行脚本，再根据当前 Harness 选择项目级安装入口。知道 Harness ID 时可以为 `npx skills` 补充 `--agent <id> --copy --yes`；无法可靠识别时应保留安装器选择步骤，不要猜测目标目录。
+
+这条消息明确授权安装 Agent Relay，但 Harness 仍可能要求批准 Shell 命令。安装后的项目文件写入继续遵循 Relay 的 dry-run 和一次确认，不会因为自动安装而跳过。
+
+### 方式 B：手动安装到当前项目
 
 ```bash
 cd /path/to/project
@@ -123,7 +148,7 @@ DO_NOT_TRACK=1 npx skills add chopperH0824/agent-relay \
   --yes
 ```
 
-### 方式 B：全局安装安装器
+### 方式 C：全局安装安装器
 
 适合在多个项目中分别初始化：
 
@@ -135,7 +160,7 @@ DO_NOT_TRACK=1 npx skills add chopperH0824/agent-relay \
 
 全局安装只让 Agent 找到“一次性安装器”。每个目标项目仍需单独确认一次初始化范围。
 
-### 方式 C：GitHub CLI
+### 方式 D：GitHub CLI
 
 ```bash
 gh skill preview chopperH0824/agent-relay agent-relay

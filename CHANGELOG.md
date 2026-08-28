@@ -6,7 +6,8 @@ All notable changes to Agent Relay are documented here. The project follows [Sem
 
 ### Changed
 
-- Reduced first-time setup to one natural-language request: `Enable Agent Relay`. The Skill owns project discovery, dry-run, adapter defaults, one confirmation, initialization, and health checks.
+- Made a single copyable request for the agent to install and enable Agent Relay the primary Quick Start; the manual `npx` command is now a collapsed fallback.
+- Updated Skill discovery and continuation rules so an agent that just installed the Skill proceeds into project setup without asking the user to repeat the request.
 - Simplified the bilingual Quick Start and demo; status can be requested in natural language without remembering Relay commands.
 
 ## [0.1.0] - 2026-08-28

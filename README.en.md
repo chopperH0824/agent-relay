@@ -11,11 +11,14 @@
 </p>
 
 <p align="center">
-  <img src="./docs/demo.gif" alt="30-second Agent Relay demo from initialization prompt to project status report" width="900">
+  <img src="./docs/demo.gif" alt="30-second Agent Relay demo from agent-managed Skill installation to project status report" width="900">
 </p>
 
-```bash
-npx skills add chopperH0824/agent-relay --skill agent-relay
+<p align="center"><strong>Recommended: send this message directly to your agent</strong></p>
+
+```text
+Install and enable Agent Relay in this project:
+https://github.com/chopperH0824/agent-relay
 ```
 
 <p align="center">
@@ -30,15 +33,24 @@ npx skills add chopperH0824/agent-relay --skill agent-relay
 
 ## Quick Start
 
-After installing the Skill above, say one sentence inside the target project:
+Send the message above to an agent with Shell and network access inside the target project. It reviews the Skill, identifies the current Harness, performs the installation, and previews the project initialization scope; you only confirm the file changes it presents.
+
+Continue requesting work normally after initialization. For a status update, just ask:
+
+> **Where does this project stand?**
+
+<details>
+<summary><strong>Manual fallback when the agent cannot install Skills</strong></summary>
+
+```bash
+npx skills add chopperH0824/agent-relay --skill agent-relay
+```
+
+Then tell the agent:
 
 > **Enable Agent Relay**
 
-That is all. The agent previews the changes, asks for one confirmation, initializes the project, and runs its health check. Continue requesting work normally afterward; there is no Skill invocation or command to remember.
-
-For a status update, just ask:
-
-> **Where does this project stand?**
+</details>
 
 ## Good Fit / Poor Fit
 
@@ -106,7 +118,20 @@ Agent Relay is not a daemon. It does not continuously consume CPU or listen on a
 
 ## Installation
 
-### Option A: Current project
+### Option A (recommended): let the agent install it
+
+Send this inside the target project:
+
+```text
+Install and enable Agent Relay in this project:
+https://github.com/chopperH0824/agent-relay
+```
+
+The agent should review [`SKILL.md`](./skills/agent-relay/SKILL.md) and the runtime before selecting the project-level entry for the current Harness. When it knows the Harness ID, it may add `--agent <id> --copy --yes` to `npx skills`; when detection is uncertain, it should preserve the installer's selection step instead of guessing a target directory.
+
+This message explicitly authorizes installing Agent Relay, but the Harness may still request Shell-command approval. Project writes after installation still require Relay's dry-run and one confirmation; automatic installation does not bypass them.
+
+### Option B: install manually in the current project
 
 ```bash
 cd /path/to/project
@@ -123,7 +148,7 @@ DO_NOT_TRACK=1 npx skills add chopperH0824/agent-relay \
   --yes
 ```
 
-### Option B: Global installer
+### Option C: global installer
 
 Use the installer across multiple projects:
 
@@ -135,7 +160,7 @@ DO_NOT_TRACK=1 npx skills add chopperH0824/agent-relay \
 
 A global installation only makes the one-time installer discoverable. Each target project still requires one reviewed initialization.
 
-### Option C: GitHub CLI
+### Option D: GitHub CLI
 
 ```bash
 gh skill preview chopperH0824/agent-relay agent-relay

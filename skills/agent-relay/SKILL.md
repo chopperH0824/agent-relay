@@ -1,6 +1,6 @@
 ---
 name: agent-relay
-description: Installs and operates durable project-level handoff, goal, task, status, environment, and sealed-version state across AI coding agents. Use when the user asks to enable or set up Agent Relay, when entering a Relay-enabled project, handing work between agents, checking project status, coordinating concurrent edits, or finalizing deliverables.
+description: Installs and operates durable project-level handoff, goal, task, status, environment, and sealed-version state across AI coding agents. Use when the user asks to install, enable, or set up Agent Relay, when entering a Relay-enabled project, handing work between agents, checking project status, coordinating concurrent edits, or finalizing deliverables.
 license: MIT
 compatibility: Requires Python 3.9 or newer. Writes only inside the user-confirmed project root and does not require network access after installation.
 metadata:
@@ -17,7 +17,9 @@ The user's current explicit request always overrides stored goals and historical
 
 ## Handle a one-line setup request
 
-Treat "Enable Agent Relay", "Set up Agent Relay", and equivalent wording in the user's language as a complete request to begin standard setup in the current project. Do not ask the user to restate dry-run flags, adapter names, doctor steps, or command syntax.
+Treat "Install and enable Agent Relay", "Enable Agent Relay", "Set up Agent Relay", and equivalent wording in the user's language as a complete request to begin standard setup in the current project. Do not ask the user to restate dry-run flags, adapter names, doctor steps, or command syntax.
+
+When an agent has just installed this Skill in response to the same user message, continue directly with project discovery; do not ask the user to repeat an enable or setup request.
 
 Use `--adapters auto` unless the user requests a different scope. The short request authorizes project discovery and the read-only dry-run. Show the resulting write plan and ask one concise yes-or-no confirmation before applying it. Ask additional questions only when the project root is ambiguous, the plan finds a safety conflict, or the user requests nondefault behavior.
 

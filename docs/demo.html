@@ -88,20 +88,23 @@
       </div>
     </section>
     <div class="progress"><span id="progressFill"></span></div>
-    <div class="footer"><span>Trigger → dry-run → initialize → work → seal → report</span><span id="elapsed">00:00 / 00:30</span></div>
+    <div class="footer"><span>Ask agent → preview → initialize → work → seal → report</span><span id="elapsed">00:00 / 00:30</span></div>
   </main>
   <script>
     const phases = [
       {
-        label: '01 / Trigger', title: 'Say one sentence.', copy: 'The Skill handles project discovery, preview, and verification.',
+        label: '01 / Ask Agent', title: 'One request.', copy: 'The agent reviews and installs the Skill, then starts project setup.',
         lines: [
-          '<span class="label">USER</span><span class="user">Enable Agent Relay.</span>',
+          '<span class="label">USER</span><span class="user">Install and enable Agent Relay:</span>',
+          '<span class="label"></span><span class="user">github.com/chopperH0824/agent-relay</span>',
           '',
-          '<span class="label">AGENT</span><span class="muted">Finding the project and preparing a safe preview...</span>'
+          '<span class="label">AGENT</span><span class="muted">Reviewing the Skill and current harness...</span>',
+          '<span class="prompt">$</span> <span class="command">npx skills add chopperH0824/agent-relay --skill agent-relay</span>',
+          '<span class="healthy">INSTALLED</span> agent-relay'
         ]
       },
       {
-        label: '02 / Dry-run', title: 'See every write.', copy: 'No file changes until the short plan is approved.',
+        label: '02 / Preview', title: 'See every write.', copy: 'No project files change until the short plan is approved.',
         lines: [
           '<span class="prompt">$</span> <span class="command">relay init --dry-run --adapters auto</span>',
           '',
@@ -170,7 +173,7 @@
         ]
       }
     ];
-    const names = ['Trigger', 'Dry-run', 'Initialize', 'Work', 'Seal', 'Report'];
+    const names = ['Ask Agent', 'Preview', 'Initialize', 'Work', 'Seal', 'Report'];
     const body = document.getElementById('terminalBody');
     const steps = document.getElementById('steps');
     function renderDemo(progress) {
