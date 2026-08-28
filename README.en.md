@@ -30,31 +30,15 @@ npx skills add chopperH0824/agent-relay --skill agent-relay
 
 ## Quick Start
 
-1. Install the Skill:
+After installing the Skill above, say one sentence inside the target project:
 
-   ```bash
-   npx skills add chopperH0824/agent-relay --skill agent-relay
-   ```
+> **Enable Agent Relay**
 
-2. Tell the agent inside the target project:
+That is all. The agent previews the changes, asks for one confirmation, initializes the project, and runs its health check. Continue requesting work normally afterward; there is no Skill invocation or command to remember.
 
-   ```text
-   Use agent-relay to initialize this project. Show the dry-run and every file change first; after confirmation, apply it and run doctor.
-   ```
+For a status update, just ask:
 
-3. Inspect the project at any time:
-
-   ```bash
-   python3 .agent-relay/relay.py report
-   ```
-
-GitHub CLI 2.90.0+ also provides this preview command:
-
-```bash
-gh skill install chopperH0824/agent-relay agent-relay
-```
-
-`npx skills` is a third-party installer with anonymous telemetry; set `DO_NOT_TRACK=1` to disable it. `gh skill` is currently a GitHub CLI preview. Review [`SKILL.md`](./skills/agent-relay/SKILL.md) and the runtime before installation.
+> **Where does this project stand?**
 
 ## Good Fit / Poor Fit
 
@@ -163,6 +147,8 @@ Pin the supply-chain version to a release tag:
 ```bash
 gh skill install chopperH0824/agent-relay agent-relay@v0.1.0 --scope user
 ```
+
+`npx skills` is a third-party installer with anonymous telemetry; set `DO_NOT_TRACK=1` to disable it. `gh skill` requires GitHub CLI 2.90.0+ and is currently a preview feature. Review [`SKILL.md`](./skills/agent-relay/SKILL.md) and the runtime before installation.
 
 ## Initialization
 

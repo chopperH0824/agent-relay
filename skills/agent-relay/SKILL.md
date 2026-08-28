@@ -1,6 +1,6 @@
 ---
 name: agent-relay
-description: Installs and operates durable project-level handoff, goal, task, status, environment, and sealed-version state across AI coding agents. Use when initializing Agent Relay, entering a Relay-enabled project, handing work between agents, checking project status, coordinating concurrent edits, or finalizing deliverables.
+description: Installs and operates durable project-level handoff, goal, task, status, environment, and sealed-version state across AI coding agents. Use when the user asks to enable or set up Agent Relay, when entering a Relay-enabled project, handing work between agents, checking project status, coordinating concurrent edits, or finalizing deliverables.
 license: MIT
 compatibility: Requires Python 3.9 or newer. Writes only inside the user-confirmed project root and does not require network access after installation.
 metadata:
@@ -14,6 +14,12 @@ metadata:
 Agent Relay is a one-time project installer plus a project-local runtime. After initialization, the target project retains the capability through `.agent-relay/`, `AGENTS.md`, and thin harness adapters. Do not ask the user to invoke this installer again for normal project work.
 
 The user's current explicit request always overrides stored goals and historical next steps.
+
+## Handle a one-line setup request
+
+Treat "Enable Agent Relay", "Set up Agent Relay", and equivalent wording in the user's language as a complete request to begin standard setup in the current project. Do not ask the user to restate dry-run flags, adapter names, doctor steps, or command syntax.
+
+Use `--adapters auto` unless the user requests a different scope. The short request authorizes project discovery and the read-only dry-run. Show the resulting write plan and ask one concise yes-or-no confirmation before applying it. Ask additional questions only when the project root is ambiguous, the plan finds a safety conflict, or the user requests nondefault behavior.
 
 ## Locate the runtime
 
@@ -35,8 +41,8 @@ Use Python 3.9 or newer. Do not install Python packages; the runtime uses only t
 python3 scripts/relay.py init --project-root "/absolute/project/path" --dry-run --adapters auto
 ```
 
-4. Show the user the complete create/modify/skip plan. Explain that existing instruction files receive bounded managed blocks and are backed up before modification.
-5. Wait for explicit approval unless the current user message already clearly authorizes initialization and the displayed scope.
+4. Show the user the complete create/modify/skip plan concisely. Explain that existing instruction files receive bounded managed blocks and are backed up before modification.
+5. Ask once for approval of the displayed plan. Skip this confirmation only when the current user message explicitly approves applying that displayed scope or asks you to proceed without another prompt.
 6. Apply the reviewed plan with the same options plus `--yes`:
 
 ```bash

@@ -93,16 +93,15 @@
   <script>
     const phases = [
       {
-        label: '01 / Trigger', title: 'Ask once.', copy: 'The installer starts with an explicit, reviewable request.',
+        label: '01 / Trigger', title: 'Say one sentence.', copy: 'The Skill handles project discovery, preview, and verification.',
         lines: [
-          '<span class="label">USER</span><span class="user">Use agent-relay to initialize this project.</span>',
-          '<span class="label"></span><span class="user">Show the dry-run first, then apply and run doctor.</span>',
+          '<span class="label">USER</span><span class="user">Enable Agent Relay.</span>',
           '',
-          '<span class="label">AGENT</span><span class="muted">Locating the Git root and reviewing existing instructions...</span>'
+          '<span class="label">AGENT</span><span class="muted">Finding the project and preparing a safe preview...</span>'
         ]
       },
       {
-        label: '02 / Dry-run', title: 'See every write.', copy: 'No file changes until the installation scope is approved.',
+        label: '02 / Dry-run', title: 'See every write.', copy: 'No file changes until the short plan is approved.',
         lines: [
           '<span class="prompt">$</span> <span class="command">relay init --dry-run --adapters auto</span>',
           '',

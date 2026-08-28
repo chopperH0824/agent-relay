@@ -30,31 +30,15 @@ npx skills add chopperH0824/agent-relay --skill agent-relay
 
 ## Quick Start
 
-1. 安装 Skill：
+安装上面的 Skill 后，在目标项目里只说一句：
 
-   ```bash
-   npx skills add chopperH0824/agent-relay --skill agent-relay
-   ```
+> **启用 Agent Relay**
 
-2. 在目标项目里对 Agent 说：
+就这样。Agent 会自己预览改动、请你确认一次，然后完成初始化和自检。以后正常提需求即可，不用再调用 Skill 或记命令。
 
-   ```text
-   使用 agent-relay 初始化当前项目。先展示 dry-run，说明每个文件变化；确认后执行并运行 doctor。
-   ```
+想看状态，直接问：
 
-3. 初始化后随时查看状态：
-
-   ```bash
-   python3 .agent-relay/relay.py report
-   ```
-
-也可以使用 GitHub CLI 2.90.0+ 的预览命令：
-
-```bash
-gh skill install chopperH0824/agent-relay agent-relay
-```
-
-`npx skills` 是第三方安装工具并包含匿名遥测；可用 `DO_NOT_TRACK=1` 关闭。`gh skill` 当前仍是 GitHub CLI 的 preview 功能。安装前请审查 [`SKILL.md`](./skills/agent-relay/SKILL.md) 和运行脚本。
+> **项目现在做到哪了？**
 
 ## 适用与不适用
 
@@ -163,6 +147,8 @@ gh skill install chopperH0824/agent-relay agent-relay --scope user
 ```bash
 gh skill install chopperH0824/agent-relay agent-relay@v0.1.0 --scope user
 ```
+
+`npx skills` 是第三方安装工具并包含匿名遥测；可用 `DO_NOT_TRACK=1` 关闭。`gh skill` 需要 GitHub CLI 2.90.0+，当前仍是 preview 功能。安装前请审查 [`SKILL.md`](./skills/agent-relay/SKILL.md) 和运行脚本。
 
 ## 初始化
 
