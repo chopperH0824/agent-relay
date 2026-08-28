@@ -17,8 +17,10 @@
 <p align="center"><strong>推荐：把下面这条消息直接发给 Agent</strong></p>
 
 ```text
-请帮我在当前项目安装并启用 Agent Relay：
-https://github.com/chopperH0824/agent-relay
+请帮我在当前项目
+安装并启用 Agent Relay
+GitHub:
+chopperH0824/agent-relay
 ```
 
 <p align="center">
@@ -123,8 +125,10 @@ flowchart LR
 在目标项目中发送：
 
 ```text
-请帮我在当前项目安装并启用 Agent Relay：
-https://github.com/chopperH0824/agent-relay
+请帮我在当前项目
+安装并启用 Agent Relay
+GitHub:
+chopperH0824/agent-relay
 ```
 
 Agent 应先审查 [`SKILL.md`](./skills/agent-relay/SKILL.md) 和运行脚本，再根据当前 Harness 选择项目级安装入口。知道 Harness ID 时可以为 `npx skills` 补充 `--agent <id> --copy --yes`；无法可靠识别时应保留安装器选择步骤，不要猜测目标目录。

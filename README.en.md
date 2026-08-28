@@ -17,8 +17,10 @@
 <p align="center"><strong>Recommended: send this message directly to your agent</strong></p>
 
 ```text
-Install and enable Agent Relay in this project:
-https://github.com/chopperH0824/agent-relay
+Install and enable
+Agent Relay in this project
+GitHub:
+chopperH0824/agent-relay
 ```
 
 <p align="center">
@@ -123,8 +125,10 @@ Agent Relay is not a daemon. It does not continuously consume CPU or listen on a
 Send this inside the target project:
 
 ```text
-Install and enable Agent Relay in this project:
-https://github.com/chopperH0824/agent-relay
+Install and enable
+Agent Relay in this project
+GitHub:
+chopperH0824/agent-relay
 ```
 
 The agent should review [`SKILL.md`](./skills/agent-relay/SKILL.md) and the runtime before selecting the project-level entry for the current Harness. When it knows the Harness ID, it may add `--agent <id> --copy --yes` to `npx skills`; when detection is uncertain, it should preserve the installer's selection step instead of guessing a target directory.
