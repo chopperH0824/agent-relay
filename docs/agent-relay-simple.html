@@ -1,0 +1,471 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Agent Relay - 一次安装，持续交接</title>
+  <style>
+    :root {
+      --ink: #101820;
+      --muted: #56616b;
+      --line: #d8dee3;
+      --paper: #ffffff;
+      --canvas: #f4f6f7;
+      --blue: #1d4ed8;
+      --blue-soft: #eaf0ff;
+      --teal: #0f766e;
+      --teal-soft: #e4f5f2;
+      --amber: #a75b00;
+      --amber-soft: #fff1d8;
+      --coral: #b53b2e;
+      --coral-soft: #fdebe8;
+      --charcoal: #17212a;
+      --radius: 8px;
+      --shadow: 0 14px 34px rgba(16, 24, 32, 0.08);
+    }
+    * { box-sizing: border-box; letter-spacing: 0; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      background: var(--canvas);
+      color: var(--ink);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      line-height: 1.65;
+    }
+    h1, h2, h3, p { margin-top: 0; }
+    code, pre { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace; }
+    .band { width: 100%; }
+    .inner { width: min(1160px, calc(100% - 48px)); margin: 0 auto; }
+
+    .hero {
+      min-height: 610px;
+      padding: 38px 0 64px;
+      background: var(--paper);
+      border-bottom: 1px solid var(--line);
+      display: flex;
+    }
+    .hero .inner { display: flex; flex-direction: column; justify-content: space-between; }
+    .brandline {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+    .brandmark { display: inline-flex; align-items: center; gap: 11px; color: var(--ink); }
+    .brandmark::before {
+      content: "";
+      width: 18px;
+      height: 18px;
+      background: var(--blue);
+      box-shadow: 7px 7px 0 var(--teal);
+    }
+    .hero-copy { max-width: 890px; padding: 88px 0 74px; }
+    .eyebrow { margin-bottom: 18px; color: var(--blue); font-size: 14px; font-weight: 800; }
+    h1 { margin-bottom: 24px; font-size: 52px; line-height: 1.12; font-weight: 790; }
+    .hero-copy p { max-width: 760px; margin-bottom: 0; color: var(--muted); font-size: 20px; line-height: 1.75; }
+    .hero-facts { display: grid; grid-template-columns: repeat(3, 1fr); border-top: 1px solid var(--line); }
+    .fact { min-height: 112px; padding: 24px 30px 20px 0; border-right: 1px solid var(--line); }
+    .fact + .fact { padding-left: 30px; }
+    .fact:last-child { border-right: 0; }
+    .fact strong { display: block; margin-bottom: 5px; font-size: 18px; }
+    .fact span { color: var(--muted); font-size: 14px; }
+
+    section { padding: 104px 0; }
+    .section-head {
+      display: grid;
+      grid-template-columns: minmax(220px, 0.85fr) minmax(360px, 1.15fr);
+      gap: 72px;
+      align-items: end;
+      margin-bottom: 58px;
+    }
+    .section-kicker { margin-bottom: 12px; color: var(--blue); font-size: 13px; font-weight: 800; }
+    h2 { margin-bottom: 0; font-size: 34px; line-height: 1.28; }
+    .section-head p { margin-bottom: 0; color: var(--muted); font-size: 17px; }
+
+    .principle { background: var(--canvas); }
+    .principle-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+    .principle-item {
+      min-height: 224px;
+      padding: 28px;
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-top: 4px solid var(--blue);
+      border-radius: var(--radius);
+    }
+    .principle-item:nth-child(2) { border-top-color: var(--teal); }
+    .principle-item:nth-child(3) { border-top-color: var(--amber); }
+    .principle-item:nth-child(4) { border-top-color: var(--coral); }
+    .number {
+      width: 34px;
+      height: 34px;
+      margin-bottom: 38px;
+      display: grid;
+      place-items: center;
+      background: var(--ink);
+      border-radius: 4px;
+      color: white;
+      font-size: 13px;
+      font-weight: 800;
+    }
+    .principle-item h3 { margin-bottom: 10px; font-size: 19px; }
+    .principle-item p { margin-bottom: 0; color: var(--muted); font-size: 14px; }
+
+    .dark { background: var(--charcoal); color: white; }
+    .dark .section-kicker { color: #8eb0ff; }
+    .dark .section-head p { color: #b9c3ca; }
+    .flow {
+      display: grid;
+      grid-template-columns: minmax(140px, 1fr) 44px minmax(140px, 1fr) 44px minmax(140px, 1fr) 44px minmax(140px, 1fr) 44px minmax(140px, 1fr);
+      align-items: stretch;
+    }
+    .flow-node {
+      min-height: 148px;
+      padding: 24px 22px;
+      background: #24313b;
+      border: 1px solid #3d4b56;
+      border-radius: var(--radius);
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+    .flow-node .step { color: #8eb0ff; font-size: 12px; font-weight: 800; }
+    .flow-node strong { font-size: 17px; line-height: 1.45; }
+    .arrow { display: grid; place-items: center; color: #7d8c97; font-size: 25px; }
+    .always-on {
+      margin-top: 34px;
+      padding: 22px 26px;
+      border-left: 4px solid #5eead4;
+      background: #1e2a33;
+      color: #d7e0e5;
+      font-size: 15px;
+    }
+    .always-on strong { color: white; }
+
+    .capabilities { background: var(--paper); }
+    .capability-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 1px;
+      background: var(--line);
+      border: 1px solid var(--line);
+    }
+    .capability { min-height: 250px; padding: 38px; background: var(--paper); }
+    .capability-top { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin-bottom: 42px; }
+    .capability h3 { margin-bottom: 0; font-size: 23px; }
+    .tag {
+      padding: 5px 9px;
+      border-radius: 4px;
+      background: var(--blue-soft);
+      color: var(--blue);
+      font-size: 12px;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+    .capability:nth-child(2) .tag { background: var(--teal-soft); color: var(--teal); }
+    .capability:nth-child(3) .tag { background: var(--amber-soft); color: var(--amber); }
+    .capability:nth-child(4) .tag { background: var(--coral-soft); color: var(--coral); }
+    .capability p { margin-bottom: 0; max-width: 440px; color: var(--muted); font-size: 15px; }
+
+    .cycle { background: var(--canvas); }
+    .cycle-layout { display: grid; grid-template-columns: 1fr 0.9fr; gap: 48px; align-items: start; }
+    .cycle-diagram {
+      display: grid;
+      grid-template-columns: 1fr 54px 1fr;
+      grid-template-rows: auto 54px auto;
+      align-items: stretch;
+    }
+    .cycle-node {
+      min-height: 148px;
+      padding: 26px;
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+    }
+    .cycle-node strong { display: block; margin-bottom: 12px; font-size: 18px; }
+    .cycle-node span { color: var(--muted); font-size: 14px; }
+    .cycle-node.one { grid-column: 1; grid-row: 1; }
+    .cycle-node.two { grid-column: 3; grid-row: 1; }
+    .cycle-node.three { grid-column: 3; grid-row: 3; }
+    .cycle-node.four { grid-column: 1; grid-row: 3; }
+    .cycle-arrow { display: grid; place-items: center; color: var(--blue); font-size: 24px; font-weight: 700; }
+    .cycle-arrow.right { grid-column: 2; grid-row: 1; }
+    .cycle-arrow.down { grid-column: 3; grid-row: 2; }
+    .cycle-arrow.left { grid-column: 2; grid-row: 3; }
+    .cycle-arrow.up { grid-column: 1; grid-row: 2; }
+    .handoff-panel { padding: 32px; background: var(--charcoal); color: white; border-radius: var(--radius); }
+    .handoff-panel h3 { margin-bottom: 8px; font-size: 21px; }
+    .handoff-panel > p { margin-bottom: 28px; color: #b9c3ca; font-size: 14px; }
+    .handoff-line {
+      display: grid;
+      grid-template-columns: 94px 1fr;
+      gap: 14px;
+      padding: 14px 0;
+      border-top: 1px solid #34424d;
+      font-size: 14px;
+    }
+    .handoff-line span:first-child { color: #8eb0ff; font-weight: 700; }
+
+    .release { background: var(--paper); }
+    .decision-flow { display: grid; grid-template-columns: 1fr 54px 1fr 54px 1fr; align-items: center; }
+    .decision-node {
+      min-height: 174px;
+      padding: 28px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--canvas);
+    }
+    .decision-node.question { border: 2px solid var(--amber); background: var(--amber-soft); }
+    .decision-node.sealed { border: 2px solid var(--teal); background: var(--teal-soft); }
+    .decision-node strong { display: block; margin-bottom: 12px; font-size: 19px; }
+    .decision-node p { margin-bottom: 0; color: var(--muted); font-size: 14px; }
+    .release-note { margin-top: 30px; display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+    .note { padding: 22px 24px; border-left: 4px solid var(--blue); background: var(--blue-soft); font-size: 14px; }
+    .note:last-child { border-left-color: var(--coral); background: var(--coral-soft); }
+
+    .collaboration { background: var(--canvas); }
+    .collab-grid { display: grid; grid-template-columns: 0.75fr 1.25fr; gap: 48px; align-items: stretch; }
+    .scope-graphic {
+      min-height: 390px;
+      padding: 34px;
+      background: var(--charcoal);
+      border-radius: var(--radius);
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      color: white;
+    }
+    .scope-graphic h3 { font-size: 22px; }
+    .scope-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .scope-box { min-height: 102px; padding: 18px; border: 1px solid #41505c; border-radius: 6px; background: #22303a; font-size: 14px; }
+    .scope-box strong { display: block; margin-bottom: 6px; color: #8eb0ff; }
+    .collision { padding: 17px 18px; border-left: 4px solid #ff9c8f; background: #382a2a; color: #ffd9d4; font-size: 14px; }
+    table { width: 100%; border-collapse: collapse; background: var(--paper); border: 1px solid var(--line); }
+    th, td { padding: 21px 22px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; font-size: 14px; }
+    th { background: #edf1f3; color: var(--muted); font-size: 12px; }
+    tr:last-child td { border-bottom: 0; }
+    .ok { color: var(--teal); font-weight: 800; }
+    .stop { color: var(--coral); font-weight: 800; }
+
+    .storage { background: var(--paper); }
+    .storage-layout { display: grid; grid-template-columns: 1fr 1fr; gap: 48px; align-items: start; }
+    .tree {
+      margin: 0;
+      padding: 30px;
+      overflow-x: auto;
+      background: var(--charcoal);
+      border-radius: var(--radius);
+      color: #dce4e9;
+      font-size: 14px;
+      line-height: 1.8;
+      white-space: pre;
+    }
+    .rules-list { display: grid; gap: 1px; background: var(--line); border: 1px solid var(--line); }
+    .rule { min-height: 82px; padding: 18px 20px; background: var(--paper); display: grid; grid-template-columns: 34px 1fr; gap: 16px; align-items: start; }
+    .rule-index { width: 30px; height: 30px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 4px; color: var(--blue); font-size: 12px; font-weight: 800; }
+    .rule strong { display: block; margin-bottom: 3px; font-size: 15px; }
+    .rule span { color: var(--muted); font-size: 13px; }
+
+    .closing { padding: 86px 0; background: var(--blue); color: white; }
+    .closing .inner { display: grid; grid-template-columns: 1.15fr 0.85fr; gap: 70px; align-items: center; }
+    .closing h2 { font-size: 36px; }
+    .closing p { margin-bottom: 0; color: #dbe6ff; font-size: 17px; }
+    .command-line { padding: 22px 24px; overflow-wrap: anywhere; background: #103aa6; border: 1px solid #6f95f1; border-radius: var(--radius); color: white; font-family: "SFMono-Regular", Consolas, monospace; font-size: 15px; }
+    footer { padding: 32px 0; background: #0f1720; color: #9eabb4; font-size: 13px; }
+    footer .inner { display: flex; justify-content: space-between; gap: 24px; }
+
+    @media (max-width: 980px) {
+      .hero { min-height: 560px; }
+      h1 { font-size: 44px; }
+      .principle-grid { grid-template-columns: repeat(2, 1fr); }
+      .flow { grid-template-columns: 1fr; }
+      .flow-node { min-height: 116px; }
+      .arrow { min-height: 42px; font-size: 0; }
+      .arrow::before { content: "↓"; font-size: 24px; }
+      .cycle-layout, .collab-grid, .storage-layout { grid-template-columns: 1fr; }
+      .closing .inner { grid-template-columns: 1fr; gap: 34px; }
+    }
+
+    @media (max-width: 700px) {
+      .inner { width: min(100% - 32px, 1160px); }
+      .hero { min-height: 640px; padding-top: 26px; }
+      .brandline { align-items: flex-start; flex-direction: column; gap: 10px; }
+      .hero-copy { padding: 62px 0 52px; }
+      h1 { font-size: 38px; }
+      .hero-copy p { font-size: 17px; }
+      .hero-facts { grid-template-columns: 1fr; }
+      .fact, .fact + .fact { min-height: 78px; padding: 14px 0; border-right: 0; border-bottom: 1px solid var(--line); }
+      .fact:last-child { border-bottom: 0; }
+      section { padding: 76px 0; }
+      .section-head { grid-template-columns: 1fr; gap: 22px; margin-bottom: 40px; }
+      h2 { font-size: 29px; }
+      .principle-grid, .capability-grid, .release-note { grid-template-columns: 1fr; }
+      .principle-item, .capability { min-height: 0; }
+      .number { margin-bottom: 26px; }
+      .cycle-diagram { grid-template-columns: 1fr; grid-template-rows: auto 42px auto 42px auto 42px auto; }
+      .cycle-node.one, .cycle-node.two, .cycle-node.three, .cycle-node.four,
+      .cycle-arrow.right, .cycle-arrow.down, .cycle-arrow.left { grid-column: 1; }
+      .cycle-node.one { grid-row: 1; }
+      .cycle-arrow.right { grid-row: 2; }
+      .cycle-node.two { grid-row: 3; }
+      .cycle-arrow.down { grid-row: 4; }
+      .cycle-node.three { grid-row: 5; }
+      .cycle-arrow.left { grid-row: 6; }
+      .cycle-node.four { grid-row: 7; }
+      .cycle-arrow.up { display: none; }
+      .cycle-arrow.right, .cycle-arrow.left { font-size: 0; }
+      .cycle-arrow.right::before, .cycle-arrow.left::before { content: "↓"; font-size: 24px; }
+      .decision-flow { grid-template-columns: 1fr; }
+      .decision-flow .arrow { min-height: 42px; }
+      .handoff-line { grid-template-columns: 1fr; gap: 4px; }
+      .scope-row { grid-template-columns: 1fr; }
+      .table-wrap { overflow-x: auto; }
+      table { min-width: 620px; }
+      footer .inner { flex-direction: column; }
+    }
+  </style>
+</head>
+<body>
+  <header class="hero band">
+    <div class="inner">
+      <div class="brandline"><span class="brandmark">Agent Relay</span><span>Persistent project handoff protocol</span></div>
+      <div class="hero-copy">
+        <div class="eyebrow">一次安装，项目长期生效</div>
+        <h1>Skill 只负责安装，<br>项目自己持续交接。</h1>
+        <p>第一次执行后，Agent Relay 把自动入口、运行脚本和交接状态留在当前项目。后续任何 Agent 打开文件夹都会先接手上下文，无需用户再次触发 Skill。</p>
+      </div>
+      <div class="hero-facts">
+        <div class="fact"><strong>自动进入</strong><span>Harness 启动时读取项目入口</span></div>
+        <div class="fact"><strong>自动沉淀</strong><span>完成任务后刷新交接与历史</span></div>
+        <div class="fact"><strong>跨 Agent</strong><span>同一份状态，不维护多套真相</span></div>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <section class="principle band">
+      <div class="inner">
+        <div class="section-head"><div><div class="section-kicker">01 / SIMPLIFIED SCOPE</div><h2>只保留四项能力</h2></div><p>用户只需要感知四件事：新 Agent 能接上、过程有记录、成果能封版、多人不会撞车。其余实现细节都隐藏在项目运行时中。</p></div>
+        <div class="principle-grid">
+          <article class="principle-item"><div class="number">01</div><h3>自动接手</h3><p>任何 Agent 开始前先读短交接，知道目标、进度、阻塞和下一步。</p></article>
+          <article class="principle-item"><div class="number">02</div><h3>自动记录</h3><p>任务结束后记录问题、动作、结果和验证，不保存冗长聊天与思维过程。</p></article>
+          <article class="principle-item"><div class="number">03</div><h3>自动封版</h3><p>明确要定版或交付时保存不可变副本，后续继续修改工作稿。</p></article>
+          <article class="principle-item"><div class="number">04</div><h3>自动协调</h3><p>Agent 先认领任务和文件；环境不兼容时说明替代方案并请求确认。</p></article>
+        </div>
+      </div>
+    </section>
+
+    <section class="dark band">
+      <div class="inner">
+        <div class="section-head"><div><div class="section-kicker">02 / ONE-TIME INSTALL</div><h2>第一次执行发生什么</h2></div><p>安装 Skill 是一次性的引导动作。真正让能力长期存在的是留在项目里的自动入口、轻量运行脚本和状态目录。</p></div>
+        <div class="flow" aria-label="首次安装流程">
+          <div class="flow-node"><span class="step">STEP 1</span><strong>执行安装 Skill</strong></div><div class="arrow">→</div>
+          <div class="flow-node"><span class="step">STEP 2</span><strong>识别项目根目录</strong></div><div class="arrow">→</div>
+          <div class="flow-node"><span class="step">STEP 3</span><strong>写入 Harness 入口</strong></div><div class="arrow">→</div>
+          <div class="flow-node"><span class="step">STEP 4</span><strong>安装项目运行时与状态</strong></div><div class="arrow">→</div>
+          <div class="flow-node"><span class="step">STEP 5</span><strong>doctor 验证并结束</strong></div>
+        </div>
+        <div class="always-on"><strong>之后不再依赖主动触发：</strong>Codex、Pi、Claude Code、Cursor、Gemini 等通过各自的项目级入口自动读取同一份交接协议。</div>
+      </div>
+    </section>
+
+    <section class="capabilities band">
+      <div class="inner">
+        <div class="section-head"><div><div class="section-kicker">03 / ONE SOURCE OF TRUTH</div><h2>入口很多，状态只有一份</h2></div><p><code>AGENTS.md</code> 作为通用主入口；Claude、Gemini 和 Cursor 的适配文件只负责转接，不分别复制目标、任务和历史。</p></div>
+        <div class="capability-grid">
+          <article class="capability"><div class="capability-top"><h3>项目入口</h3><span class="tag">AUTO LOAD</span></div><p>告诉不同 Harness：开始前读取交接、修改前认领任务、结束时更新状态。</p></article>
+          <article class="capability"><div class="capability-top"><h3>交接总览</h3><span class="tag">HANDOFF</span></div><p>保持短小，只显示当前目标、进行中任务、最近动作、风险和下一步。</p></article>
+          <article class="capability"><div class="capability-top"><h3>项目运行时</h3><span class="tag">RELAY CLI</span></div><p>以原子方式完成任务认领、事件落盘、环境比较、封版和总览刷新。</p></article>
+          <article class="capability"><div class="capability-top"><h3>历史仓库</h3><span class="tag">IMMUTABLE</span></div><p>按事件和版本保存事实记录，避免多个 Agent 同时追加一个大文件。</p></article>
+        </div>
+      </div>
+    </section>
+
+    <section class="cycle band">
+      <div class="inner">
+        <div class="section-head"><div><div class="section-kicker">04 / EVERY SESSION</div><h2>后续每次自动循环</h2></div><p>用户照常描述任务。Agent Relay 在后台完成接手与收尾，除非发现文件冲突、环境缺失或定版范围不明确，才需要打断用户确认。</p></div>
+        <div class="cycle-layout">
+          <div class="cycle-diagram" aria-label="日常会话循环">
+            <div class="cycle-node one"><strong>1. 读取交接</strong><span>目标、任务、版本、最近动作与环境差异</span></div><div class="cycle-arrow right">→</div>
+            <div class="cycle-node two"><strong>2. 认领范围</strong><span>声明任务与计划修改文件，检查是否冲突</span></div><div class="cycle-arrow down">↓</div>
+            <div class="cycle-node three"><strong>3. 执行验证</strong><span>根据用户当前问题完成工作并进行必要验证</span></div><div class="cycle-arrow left">←</div>
+            <div class="cycle-node four"><strong>4. 更新交接</strong><span>记录结果、释放任务、识别目标与封版意图</span></div><div class="cycle-arrow up">↑</div>
+          </div>
+          <aside class="handoff-panel">
+            <h3>HANDOFF.md</h3><p>任何 Agent 第一时间读取的短总览</p>
+            <div class="handoff-line"><span>全局目标</span><span>明确目标或留空，不强制执行</span></div>
+            <div class="handoff-line"><span>当前任务</span><span>负责人、状态、修改范围和阻塞</span></div>
+            <div class="handoff-line"><span>最近动作</span><span>问题、处理、结果和验证</span></div>
+            <div class="handoff-line"><span>当前版本</span><span>最近封版和后续工作稿状态</span></div>
+            <div class="handoff-line"><span>环境差异</span><span>当前缺失能力及可选替代方案</span></div>
+          </aside>
+        </div>
+      </div>
+    </section>
+
+    <section class="release band">
+      <div class="inner">
+        <div class="section-head"><div><div class="section-kicker">05 / VERSION SEALING</div><h2>定版只做一次判断</h2></div><p>识别的是“现在要交付”的完整语义，不是机械扫描单个关键词。明确时自动执行，模糊时只确认范围。</p></div>
+        <div class="decision-flow" aria-label="定版判断流程">
+          <div class="decision-node"><strong>收到用户消息</strong><p>例如“定版”“就按这个发”“可以了”。</p></div><div class="arrow">→</div>
+          <div class="decision-node question"><strong>是否明确立即交付？</strong><p>明确则继续；无法判断是步骤完成还是整体定版时询问。</p></div><div class="arrow">→</div>
+          <div class="decision-node sealed"><strong>生成不可变版本</strong><p>复制交付物、计算校验值、汇总版本历程，再继续维护工作副本。</p></div>
+        </div>
+        <div class="release-note"><div class="note"><strong>自动封版：</strong>“最终版”“就按这个发”“现在发给领导”。</div><div class="note"><strong>先确认：</strong>单独的“可以了”“就这样”，且上下文无法确定范围。</div></div>
+      </div>
+    </section>
+
+    <section class="collaboration band">
+      <div class="inner">
+        <div class="section-head"><div><div class="section-kicker">06 / MULTI-AGENT SAFETY</div><h2>并行可以，撞文件不行</h2></div><p>每个 Agent 开始前声明写入范围。不同文件可以并行；同一文件必须等待、拆分任务，或使用独立 Git worktree。</p></div>
+        <div class="collab-grid">
+          <div class="scope-graphic"><h3>文件范围认领</h3><div class="scope-row"><div class="scope-box"><strong>Agent A</strong>src/api/**</div><div class="scope-box"><strong>Agent B</strong>docs/**</div></div><div class="collision">若 Agent C 也要修改 src/api/**，系统先阻止写入并给出等待或 worktree 方案。</div></div>
+          <div class="table-wrap"><table><thead><tr><th>任务关系</th><th>文件关系</th><th>处理</th></tr></thead><tbody>
+            <tr><td>不同任务</td><td>不重叠</td><td class="ok">允许并行</td></tr>
+            <tr><td>不同任务</td><td>写入重叠</td><td class="stop">阻止第二个写入者</td></tr>
+            <tr><td>同一任务</td><td>可拆分</td><td>拆成子任务后分别认领</td></tr>
+            <tr><td>同一模块</td><td>必须同时修改</td><td>使用独立 worktree 后合并</td></tr>
+            <tr><td>原 Agent 失联</td><td>租约已过期</td><td>记录接管原因后允许接管</td></tr>
+          </tbody></table></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="storage band">
+      <div class="inner">
+        <div class="section-head"><div><div class="section-kicker">07 / MINIMAL PROJECT FOOTPRINT</div><h2>项目里只留下必要内容</h2></div><p>共享事实与本机环境分开。可提交的记录经过脱敏；锁、缓存、私有路径和机器状态默认不进入 Git。</p></div>
+        <div class="storage-layout">
+          <pre class="tree">project/
+├── AGENTS.md
+├── CLAUDE.md
+├── GEMINI.md
+├── .agents/skills/agent-relay/
+└── .agent-relay/
+    ├── HANDOFF.md
+    ├── relay.py
+    ├── goals.json
+    ├── tasks/
+    ├── events/
+    ├── versions/
+    ├── environments/
+    └── runtime/</pre>
+          <div class="rules-list">
+            <div class="rule"><span class="rule-index">01</span><div><strong>目标只提醒</strong><span>当前用户消息始终优先，不以历史目标阻止任务。</span></div></div>
+            <div class="rule"><span class="rule-index">02</span><div><strong>环境按变化记录</strong><span>事件只引用快照 ID，避免重复保存整台电脑信息。</span></div></div>
+            <div class="rule"><span class="rule-index">03</span><div><strong>不记录秘密</strong><span>禁止 Token、密码、Cookie、私钥和完整环境变量值。</span></div></div>
+            <div class="rule"><span class="rule-index">04</span><div><strong>不编造历史</strong><span>跨 Harness 聊天不可访问时留空，从安装后开始沉淀。</span></div></div>
+            <div class="rule"><span class="rule-index">05</span><div><strong>安装可逆</strong><span>幂等、可预览、可卸载，不覆盖现有项目说明。</span></div></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="closing band"><div class="inner"><div><h2>最终体验：用户照常提需求</h2><p>Agent Relay 自动完成接手、认领、记录和封版。只有发生冲突、能力不匹配或定版范围模糊时，才需要用户做决定。</p></div><div class="command-line">install once → project stays relay-aware</div></div></section>
+  </main>
+  <footer><div class="inner"><span>Agent Relay simplified architecture</span><span>Project-local · Harness-adapted · Secret-safe</span></div></footer>
+</body>
+</html>
