@@ -22,7 +22,7 @@
   <a href="https://agentskills.io"><img alt="Agent Skills compatible" src="https://img.shields.io/badge/Agent%20Skills-compatible-2563eb"></a>
 </p>
 
-[最新版本](https://github.com/chopperH0824/agent-relay/releases/latest) · [可视化架构](./docs/agent-relay-simple.html) · [完整协议](./skills/agent-relay/references/PROTOCOL.md) · [安全边界](./skills/agent-relay/references/SECURITY.md)
+[最新版本](https://github.com/chopperH0824/agent-relay/releases/latest) · [自然语言用法](#直接对-agent-说) · [卸载还原](#卸载与还原) · [可视化架构](./docs/agent-relay-simple.html) · [完整协议](./skills/agent-relay/references/PROTOCOL.md) · [安全边界](./skills/agent-relay/references/SECURITY.md)
 
 ## Quick Start
 
@@ -45,6 +45,21 @@ npx skills add chopperH0824/agent-relay --skill agent-relay
 Agent 会审查 Skill、识别当前 Harness、预览将要写入的文件；你确认一次后完成初始化和自检。以后正常提需求即可。想看状态，直接问：
 
 > **项目现在做到哪了？**
+
+## 直接对 Agent 说
+
+用户不需要记住 Relay 命令。安装后继续用自然语言描述意图：
+
+- 继续工作：**“先读取 Agent Relay 的交接状态，然后继续实现导出功能。”**
+- 查看状态：**“汇报这个项目现在做到哪了、当前阻塞和下一步。”**
+- 记录目标：**“把‘完成 v0.2’记录为长期目标。”**
+- 保存接手点：**“保存当前接手点，记录已改文件、验证结果和下一步。”**
+- 并行协作：**“先检查写范围冲突，再让两个 Agent 分工。”**
+- 封存交付：**“这是最终交付版，请先预览，再封存 `dist/final.pdf`。”**
+- 检查健康：**“检查 Agent Relay 是否完整、是否有过期任务或敏感信息。”**
+- 卸载还原：**“卸载 Agent Relay，并把项目恢复到未安装 Relay 的结构；先预览并说明会删除和保留什么。”**
+
+Agent 将自然语言意图转换为项目内操作。历史目标只提供上下文，当前消息始终优先。
 
 ## 适用与不适用
 
@@ -162,82 +177,49 @@ gh skill install chopperH0824/agent-relay agent-relay@v0.1.0 --scope user
 
 `npx skills` 是第三方安装工具并包含匿名遥测；可用 `DO_NOT_TRACK=1` 关闭。`gh skill` 需要 GitHub CLI 2.90.0+，当前仍是 preview 功能。安装前请审查 [`SKILL.md`](./skills/agent-relay/SKILL.md) 和运行脚本。
 
-## 初始化
+## 初始化会发生什么
 
-Skill 会先运行无副作用预览：
+安装完成后，用户只需说：
 
-```bash
-python3 scripts/relay.py init \
-  --project-root "/absolute/project/path" \
-  --dry-run \
-  --adapters auto
-```
+> **启用 Agent Relay**
 
-用户确认后才应用：
+Agent 会按固定安全顺序执行：
 
-```bash
-python3 scripts/relay.py init \
-  --project-root "/absolute/project/path" \
-  --adapters auto \
-  --yes
-```
+1. 确认当前项目根目录和 Harness。
+2. 运行只读预览，列出所有创建、修改和跳过的路径。
+3. 说明受管块、备份和适配器范围，只请求一次确认。
+4. 按同一方案初始化，默认自动匹配当前项目已有的 Harness 入口。
+5. 运行完整性检查并汇报当前状态。
 
-三种适配模式：
+需要控制适配范围时，也直接告诉 Agent：
 
-| 模式 | 行为 |
-| --- | --- |
-| `minimal` | 只安装 `AGENTS.md`、通用 `.agents/skills/` 入口和 `.gitignore` 受管块 |
-| `auto` | 在 minimal 基础上，根据项目中已有 Harness 目录和规则文件补适配器；默认值 |
-| `all` | 生成 v0.1 提供的全部直接适配器，适合明确需要跨多 Harness 的项目 |
+- **“只安装最小通用入口。”** 对应 `minimal`。
+- **“自动匹配这个项目已有的 Agent。”** 对应默认 `auto`。
+- **“为所有已支持 Harness 安装入口。”** 对应 `all`。
 
-初始化是幂等的：重复执行会更新同一个受管块，不会追加副本。已有文件在修改前备份；符号链接、项目外路径和现有非 Relay Skill 不会被覆盖。
+初始化是幂等的：重复启用会更新同一个受管块，不会追加副本。已有文件在修改前备份；符号链接、项目外路径和现有非 Relay Skill 不会被覆盖。
 
 ## 初始化后怎么用
 
-用户继续像平常一样提需求。项目指令要求 Agent 在实质修改前认领任务：
+继续像平常一样描述任务，不需要主动调用 Relay 生命周期命令。例如：
 
-```bash
-python3 .agent-relay/relay.py start \
-  --title "实现导出接口" \
-  --owner "pi:session-12" \
-  --scope "src/export/**" \
-  --scope "tests/export/**"
-```
+> **先读取项目交接状态，然后实现导出接口，并避免修改其他 Agent 正在处理的文件。**
 
-长任务保存接手点：
+项目入口会引导 Agent 在后台完成任务认领、环境记录和写范围声明。长任务需要暂停或换 Agent 时，可以说：
 
-```bash
-python3 .agent-relay/relay.py checkpoint \
-  --task-id "task-id" \
-  --summary "导出逻辑完成，正在补错误分支" \
-  --changed "src/export/service.py" \
-  --verify "focused tests passed" \
-  --next-step "补充超时测试"
-```
+> **保存当前接手点：说明完成了什么、改了哪些文件、验证结果和下一步。**
 
-结束时释放租约并刷新交接：
-
-```bash
-python3 .agent-relay/relay.py finish \
-  --task-id "task-id" \
-  --result "导出接口和错误处理已完成" \
-  --changed "src/export/service.py" \
-  --changed "tests/export/test_service.py" \
-  --verify "python3 -m unittest passed" \
-  --next-step "等待接口评审"
-```
-
-记录只包含可交接事实，不保存完整聊天或隐藏思维过程。
+任务结束时，Agent 会记录结果、验证和下一步，释放写入范围并刷新 `HANDOFF.md`。记录只包含可交接事实，不保存完整聊天或隐藏思维过程。
 
 ## 快速状态汇报
 
-```bash
-python3 .agent-relay/relay.py report
-python3 .agent-relay/relay.py report --full
-python3 .agent-relay/relay.py report --json
-```
+直接问 Agent：
 
-默认输出固定为 10 行左右：
+> **项目现在做到哪了？**
+
+需要更多信息时说 **“给我完整状态”**；需要机器可读结果时说 **“用 JSON 汇报 Agent Relay 状态”**。Agent 会调用只读报告，不会认领任务、刷新租约、创建事件或改写 `HANDOFF.md`。
+
+默认汇报固定为 10 行左右：
 
 ```text
 Agent Relay report
@@ -252,8 +234,6 @@ Next step: 创建 GitHub Release
 Updated: 2026-08-28T09:00:00Z · event-id
 ```
 
-`report` 无副作用：不认领任务、不刷新租约、不创建事件、不改写 `HANDOFF.md`，并使用 Git 的 `--no-optional-locks` 模式读取工作区状态。
-
 | 健康状态 | 含义 |
 | --- | --- |
 | `healthy` | 状态、入口和租约一致 |
@@ -265,23 +245,21 @@ Updated: 2026-08-28T09:00:00Z · event-id
 
 ## 目标与动作
 
-```bash
-python3 .agent-relay/relay.py goal add "完成 v0.2" \
-  --kind explicit \
-  --scope long-term
+用自然语言增加或更新目标：
 
-python3 .agent-relay/relay.py goal list
-python3 .agent-relay/relay.py goal update "goal-id" --status completed
-```
+- **“把‘完成 v0.2’记录为长期目标。”**
+- **“把接口迁移目标标记为完成。”**
+- **“暂停性能优化目标，当前先处理线上故障。”**
 
-- 用户明确说出的目标标记为 `explicit`。
-- Agent 推断的目标只能标记为 `candidate`。
-- 目标可完成、暂停或被替代。
-- 目标不能覆盖当前用户请求。
+用户明确说出的目标标记为 `explicit`；Agent 推断的目标只能标记为 `candidate`。目标可完成、暂停或被替代，但不能覆盖当前用户请求。
 
 任务、检查点、完成、目标变化、初始化和封版都使用“一事件一 JSON 文件”，避免多个 Agent 同时追加一个大日志。
 
 ## 多 Agent 协作
+
+对负责调度的 Agent 说：
+
+> **先检查写范围冲突，再把 API 和文档任务分给不同 Agent；如果重叠就拆分任务或使用独立 worktree。**
 
 ```mermaid
 flowchart LR
@@ -297,40 +275,49 @@ flowchart LR
 | 路径、glob 或字面前缀重叠 | 阻止第二个写入者 |
 | 活跃任务租约过期 | 标记 `expired`，新任务可审计式接手 |
 | 已完成任务再次更新 | 拒绝，避免重复完成事件 |
-| 只读任务 | 可以不声明 `--scope` |
+| 只读任务 | 无需声明写范围 |
 | 必须并行改同一模块 | 使用独立 Git worktree 后审查合并 |
 
 v0.1 的锁保证面向同一台电脑的本地文件系统；不承诺跨机器、NFS、Dropbox 或网盘同步目录的强一致性。
 
 ## 版本封存
 
+明确告诉 Agent 哪些内容现在可以交付：
+
+> **这是最终交付版。请先预览封存范围，确认后封存 `dist/final.pdf`，标签写“客户交付”。**
+
 Agent 只有在完整语义明确表示“现在定版/立即交付”时才执行封版。单独的“可以了”如果范围不清楚，必须先问。
 
-先预览：
-
-```bash
-python3 .agent-relay/relay.py seal \
-  --artifact "dist/final.pdf" \
-  --dry-run
-```
-
-确认后创建不可覆盖版本：
-
-```bash
-python3 .agent-relay/relay.py seal \
-  --artifact "dist/final.pdf" \
-  --label "客户交付" \
-  --summary "已确认的最终文件" \
-  --yes
-```
-
-结果位于 `.agent-relay/versions/v001/`、`v002/` 等目录。每个复制文件记录大小和 SHA-256；`doctor` 会检查篡改。Git 代码项目也可以不复制文件，只封存当前 `HEAD` 和工作区状态；Agent Relay 不会自动 commit。
+封存结果位于 `.agent-relay/versions/v001/`、`v002/` 等目录，不会覆盖旧版本。每个复制文件记录大小和 SHA-256；完整性检查会检测篡改。Git 代码项目也可以只封存当前 `HEAD` 和工作区状态；Agent Relay 不会自动 commit。
 
 默认单次 artifact 上限为 100 MiB，符号链接、项目根目录和 `.agent-relay/` 自身不能作为交付范围。
 
-## 命令
+## 卸载与还原
 
-| 命令 | 作用 | 是否修改状态 |
+### 保留历史的安全卸载
+
+对 Agent 说：
+
+> **卸载 Agent Relay。先预览，移除它添加的项目入口和运行时，保留目标、事件、版本和备份；说明会删除和保留什么，等我确认后执行。**
+
+确认后，Agent 会删除 Relay 受管块、未被修改的 owned adapter 和项目内运行时。用户修改过的 adapter 会保留并单独报告，避免误删。
+
+### 恢复到未安装 Relay 的结构
+
+需要连历史数据和安装 Skill 一并清除时说：
+
+> **彻底移除 Agent Relay，并把当前项目恢复到未安装 Relay 的结构。先预览；确认后卸载项目能力、删除 Relay 历史，并移除项目级 Skill。不要强删我修改过的适配文件，先报告冲突。**
+
+Agent 应按顺序完成安全卸载、双重确认的历史清除，再根据当前 Harness 的安装记录移除项目级 Skill。只有用户明确要求时才移除全局 Skill。
+
+> [!WARNING]
+> 完全还原会永久删除 `.agent-relay/` 中的目标、事件、封存版本和备份。它只移除 Agent Relay 自己的安装痕迹，不会撤销各 Agent 已经对业务代码做出的修改。
+
+## Agent / 自动化命令参考
+
+下面是 Skill 和自动化集成调用的底层接口，不是用户必须记忆的操作流程。
+
+| 接口 | 作用 | 是否修改状态 |
 | --- | --- | --- |
 | `init --dry-run` | 预览安装计划 | 否 |
 | `init --yes` | 安装或更新项目能力 | 是 |
@@ -342,10 +329,11 @@ python3 .agent-relay/relay.py seal \
 | `status [--json]` | 展开规范状态 | 否 |
 | `doctor [--json]` | 检查 Schema、入口、校验值和秘密模式 | 否 |
 | `seal --yes` | 创建不可覆盖版本 | 是 |
-| `uninstall` | 移除受管入口和运行时，保留历史 | 是 |
-| `purge` | 显式确认后永久删除 Relay 数据 | 是，破坏性 |
+| `uninstall --dry-run` | 预览卸载和保留范围 | 否 |
+| `uninstall --yes` | 移除项目能力并保留历史 | 是 |
+| `purge --yes --confirm <项目名>` | 永久删除 Relay 历史 | 是，破坏性 |
 
-运行 `python3 .agent-relay/relay.py --help` 查看全部参数。
+Agent 可从已安装的 [`SKILL.md`](./skills/agent-relay/SKILL.md) 获取完整调用顺序；自动化开发者可运行 `python3 .agent-relay/relay.py --help` 查看参数。
 
 ## 它会修改什么
 
@@ -480,44 +468,6 @@ DO_NOT_TRACK=1 npx --yes skills add . --list
 
 GitHub Actions 在 Python 3.9、3.11 和 3.13 上运行同一测试套件。
 
-## 卸载与恢复
-
-先预览：
-
-```bash
-python3 .agent-relay/relay.py uninstall --dry-run
-```
-
-再移除项目能力：
-
-```bash
-python3 .agent-relay/relay.py uninstall --yes
-```
-
-默认卸载会：
-
-- 从说明文件中删除 Agent Relay 受管块；
-- 删除内容未被本地修改的 owned adapter；
-- 删除项目内 `relay.py`；
-- 保留目标、事件、版本、HANDOFF 和备份；
-- 保留本地修改过的 adapter 并报告原因。
-
-彻底删除历史必须从安装 Skill 的脚本执行：
-
-```bash
-python3 scripts/relay.py purge \
-  --project-root "/absolute/project/path" \
-  --yes \
-  --confirm "project-directory-name"
-```
-
-移除全局 Skill 不会改动已经初始化的项目：
-
-```bash
-npx skills remove --global agent-relay
-```
-
-通过 GitHub CLI preview 安装时，先运行 `gh skill list` 定位当前 Harness 目录，再按该 Harness 的目录规则移除；当前 `gh skill` 手册尚未提供 remove 子命令。
 
 ## 限制
 

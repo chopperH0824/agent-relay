@@ -22,7 +22,7 @@
   <a href="https://agentskills.io"><img alt="Agent Skills compatible" src="https://img.shields.io/badge/Agent%20Skills-compatible-2563eb"></a>
 </p>
 
-[Latest release](https://github.com/chopperH0824/agent-relay/releases/latest) · [Visual architecture](./docs/agent-relay-simple.html) · [Protocol](./skills/agent-relay/references/PROTOCOL.md) · [Security boundary](./skills/agent-relay/references/SECURITY.md)
+[Latest release](https://github.com/chopperH0824/agent-relay/releases/latest) · [Natural-language use](#talk-to-the-agent) · [Uninstall and restore](#uninstall-and-restore) · [Visual architecture](./docs/agent-relay-simple.html) · [Protocol](./skills/agent-relay/references/PROTOCOL.md) · [Security boundary](./skills/agent-relay/references/SECURITY.md)
 
 ## Quick Start
 
@@ -45,6 +45,21 @@ After a manual install, tell the agent:
 The agent reviews the Skill, identifies the current Harness, and previews the files it will write; you confirm once, then it initializes the project and runs its health check. Continue requesting work normally afterward. For a status update, just ask:
 
 > **Where does this project stand?**
+
+## Talk to the Agent
+
+Users do not need to remember Relay commands. After installation, describe the intent in natural language:
+
+- Continue work: **“Read the Agent Relay handoff, then continue implementing the export feature.”**
+- Check status: **“Tell me where this project stands, what is blocked, and what comes next.”**
+- Record a goal: **“Record ‘Complete v0.2’ as a long-term goal.”**
+- Save a handoff point: **“Save the current handoff point with changed files, verification, and the next step.”**
+- Coordinate agents: **“Check write-scope conflicts before splitting this work between two agents.”**
+- Seal delivery: **“This is the final deliverable. Preview the scope, then seal `dist/final.pdf`.”**
+- Check health: **“Check Agent Relay integrity, expired work, and sensitive-data warnings.”**
+- Uninstall and restore: **“Uninstall Agent Relay and restore the project to a structure without Relay. Preview and explain every deletion and preservation first.”**
+
+The agent translates intent into project-local operations. Historical goals provide context; the current request always has priority.
 
 ## Good Fit / Poor Fit
 
@@ -162,82 +177,49 @@ gh skill install chopperH0824/agent-relay agent-relay@v0.1.0 --scope user
 
 `npx skills` is a third-party installer with anonymous telemetry; set `DO_NOT_TRACK=1` to disable it. `gh skill` requires GitHub CLI 2.90.0+ and is currently a preview feature. Review [`SKILL.md`](./skills/agent-relay/SKILL.md) and the runtime before installation.
 
-## Initialization
+## What Initialization Does
 
-The Skill first runs a side-effect-free preview:
+After installation, the user only needs to say:
 
-```bash
-python3 scripts/relay.py init \
-  --project-root "/absolute/project/path" \
-  --dry-run \
-  --adapters auto
-```
+> **Enable Agent Relay**
 
-It applies only after confirmation:
+The agent follows a fixed safety sequence:
 
-```bash
-python3 scripts/relay.py init \
-  --project-root "/absolute/project/path" \
-  --adapters auto \
-  --yes
-```
+1. Confirm the project root and current Harness.
+2. Run a read-only preview listing every create, modify, and skip path.
+3. Explain managed blocks, backups, and adapter scope, then ask for one confirmation.
+4. Apply the same plan, automatically matching Harness entries already present by default.
+5. Run integrity checks and report the current state.
 
-Adapter modes:
+Adapter scope can also be requested in natural language:
 
-| Mode | Behavior |
-| --- | --- |
-| `minimal` | Install `AGENTS.md`, the universal `.agents/skills/` entry, and managed `.gitignore` lines only |
-| `auto` | Add adapters for harness directories or instruction files already present; default |
-| `all` | Generate every direct v0.1 adapter for projects that explicitly need broad portability |
+- **“Install only the minimal universal entries.”** selects `minimal`.
+- **“Automatically match the agents already used by this project.”** selects the default `auto` mode.
+- **“Install entries for every supported Harness.”** selects `all`.
 
-Initialization is idempotent: reruns replace the same managed block instead of appending copies. Existing files are backed up before changes. Symlinks, external paths, and existing non-Relay Skills are not overwritten.
+Initialization is idempotent: enabling it again updates the same managed block instead of appending copies. Existing files are backed up before changes. Symlinks, external paths, and existing non-Relay Skills are not overwritten.
 
 ## Daily Use
 
-Users continue making normal requests. Project instructions tell the agent to claim work before substantive edits:
+Continue describing work normally; users do not need to call Relay lifecycle commands. For example:
 
-```bash
-python3 .agent-relay/relay.py start \
-  --title "Implement export endpoint" \
-  --owner "pi:session-12" \
-  --scope "src/export/**" \
-  --scope "tests/export/**"
-```
+> **Read the project handoff, then implement the export endpoint without touching files another agent is editing.**
 
-Save a handoff point during long work:
+Project entries guide the agent to claim the task, capture the environment, and declare write scope in the background. Before pausing long work or changing agents, say:
 
-```bash
-python3 .agent-relay/relay.py checkpoint \
-  --task-id "task-id" \
-  --summary "Export path complete; adding error cases" \
-  --changed "src/export/service.py" \
-  --verify "focused tests passed" \
-  --next-step "Add timeout coverage"
-```
+> **Save the current handoff point with completed work, changed files, verification, and the next step.**
 
-Release the lease and refresh the handoff at completion:
-
-```bash
-python3 .agent-relay/relay.py finish \
-  --task-id "task-id" \
-  --result "Export endpoint and error handling complete" \
-  --changed "src/export/service.py" \
-  --changed "tests/export/test_service.py" \
-  --verify "python3 -m unittest passed" \
-  --next-step "Await API review"
-```
-
-Records contain operational facts only, never complete chats or hidden reasoning.
+At completion, the agent records the result, verification, and next step, releases the write scope, and refreshes `HANDOFF.md`. Records contain operational facts only, never complete chats or hidden reasoning.
 
 ## Instant Status Report
 
-```bash
-python3 .agent-relay/relay.py report
-python3 .agent-relay/relay.py report --full
-python3 .agent-relay/relay.py report --json
-```
+Ask the agent directly:
 
-The default output stays near ten lines:
+> **Where does this project stand?**
+
+Say **“Give me the full status”** for more detail, or **“Report Agent Relay status as JSON”** for a machine-readable result. The agent calls the read-only report, which does not claim work, renew leases, create events, or rewrite `HANDOFF.md`.
+
+The default report stays near ten lines:
 
 ```text
 Agent Relay report
@@ -252,8 +234,6 @@ Next step: Create the GitHub Release
 Updated: 2026-08-28T09:00:00Z · event-id
 ```
 
-`report` is side-effect free: it does not claim work, renew leases, create events, or rewrite `HANDOFF.md`. Git worktree inspection uses `--no-optional-locks`.
-
 | Health | Meaning |
 | --- | --- |
 | `healthy` | State, entries, and leases are consistent |
@@ -265,23 +245,21 @@ The machine contract follows [`report.schema.json`](./skills/agent-relay/assets/
 
 ## Goals and Events
 
-```bash
-python3 .agent-relay/relay.py goal add "Complete v0.2" \
-  --kind explicit \
-  --scope long-term
+Add or update goals in natural language:
 
-python3 .agent-relay/relay.py goal list
-python3 .agent-relay/relay.py goal update "goal-id" --status completed
-```
+- **“Record ‘Complete v0.2’ as a long-term goal.”**
+- **“Mark the API migration goal complete.”**
+- **“Pause performance optimization; handle the production incident first.”**
 
-- User-stated goals are `explicit`.
-- Agent-inferred goals are only `candidate`.
-- Goals can complete, pause, or be superseded.
-- Goals never override the current request.
+User-stated goals are `explicit`; agent-inferred goals are only `candidate`. Goals can complete, pause, or be superseded, but they never override the current request.
 
 Task starts, checkpoints, finishes, goal changes, initialization, and sealing each use one JSON file per event. Agents never append concurrently to one large log.
 
 ## Multi-Agent Coordination
+
+Tell the coordinating agent:
+
+> **Check write-scope conflicts before splitting API and documentation work between agents. If scopes overlap, split the task or use separate worktrees.**
 
 ```mermaid
 flowchart LR
@@ -297,55 +275,65 @@ flowchart LR
 | Exact paths, globs, or literal prefixes overlap | Reject the second writer |
 | Active lease expires | Mark it `expired`; allow an audited new task |
 | A finished task is updated again | Reject duplicate completion |
-| Read-only work | May omit `--scope` |
+| Read-only work | No write scope is required |
 | Same module must change concurrently | Use separate Git worktrees, then review and merge |
 
 v0.1 locks target a same-machine local filesystem. They do not promise cross-machine, NFS, Dropbox, or cloud-sync consistency.
 
 ## Version Sealing
 
+Tell the agent exactly what is ready to deliver:
+
+> **This is the final deliverable. Preview the seal scope, then seal `dist/final.pdf` with the label “Client delivery.”**
+
 The agent seals only when the complete conversational meaning clearly requests finalization or immediate delivery. An isolated “looks good” with unclear scope requires a question first.
 
-Preview:
-
-```bash
-python3 .agent-relay/relay.py seal \
-  --artifact "dist/final.pdf" \
-  --dry-run
-```
-
-Create a non-overwriting version after confirmation:
-
-```bash
-python3 .agent-relay/relay.py seal \
-  --artifact "dist/final.pdf" \
-  --label "Client delivery" \
-  --summary "Approved final file" \
-  --yes
-```
-
-Results live under `.agent-relay/versions/v001/`, `v002/`, and so on. Every copied file records its byte size and SHA-256; `doctor` detects tampering. A Git code project may create a manifest-only seal with `HEAD` and worktree state. Agent Relay does not commit automatically.
+Results live under `.agent-relay/versions/v001/`, `v002/`, and so on and never overwrite older versions. Every copied file records its byte size and SHA-256; integrity checks detect tampering. A Git code project may seal only the current `HEAD` and worktree state. Agent Relay does not commit automatically.
 
 The default artifact limit is 100 MiB. Symlinks, the project root, and `.agent-relay/` itself cannot be selected as deliverables.
 
-## Commands
+## Uninstall and Restore
 
-| Command | Purpose | Mutates state? |
+### Safe uninstall that preserves history
+
+Tell the agent:
+
+> **Uninstall Agent Relay. Preview first; remove its project entries and runtime while preserving goals, events, versions, and backups. Explain every deletion and preservation, then wait for my confirmation.**
+
+After confirmation, the agent removes Relay managed blocks, unchanged owned adapters, and the project runtime. Adapters modified by the user are preserved and reported separately to prevent accidental deletion.
+
+### Restore a structure without Relay
+
+To remove history and the installed Skill as well, say:
+
+> **Remove Agent Relay completely and restore this project to a structure without Relay. Preview first; after confirmation, uninstall project capability, delete Relay history, and remove the project-level Skill. Do not force-delete adapters I changed; report conflicts first.**
+
+The agent should perform the safe uninstall, the doubly confirmed history purge, and then remove the project-level Skill according to the current Harness installation record. It removes a global Skill only when the user explicitly requests that scope.
+
+> [!WARNING]
+> A complete restore permanently deletes goals, events, sealed versions, and backups under `.agent-relay/`. It removes Agent Relay's own installation footprint; it does not undo business-code changes previously made by agents.
+
+## Agent / Automation Command Reference
+
+These are underlying interfaces called by the Skill and automation integrations, not commands users must memorize.
+
+| Interface | Purpose | Mutates state? |
 | --- | --- | --- |
 | `init --dry-run` | Preview installation | No |
 | `init --yes` | Install or update project capability | Yes |
 | `start` | Create task, environment snapshot, and write lease | Yes |
-| `checkpoint` | Save a handoff point and renew lease | Yes |
-| `finish` | Complete, block, or cancel work and release lease | Yes |
+| `checkpoint` | Save a handoff point and renew the lease | Yes |
+| `finish` | Complete, block, or cancel work and release the lease | Yes |
 | `goal` | Manage explicit or candidate goals | Depends on subcommand |
 | `report [--full\|--json]` | Summarize the current project | No |
 | `status [--json]` | Show canonical state | No |
 | `doctor [--json]` | Check schema, entries, hashes, and secret patterns | No |
 | `seal --yes` | Create a non-overwriting version | Yes |
-| `uninstall` | Remove managed capability and preserve history | Yes |
-| `purge` | Permanently delete Relay data after explicit confirmation | Yes, destructive |
+| `uninstall --dry-run` | Preview uninstall and preservation scope | No |
+| `uninstall --yes` | Remove project capability and preserve history | Yes |
+| `purge --yes --confirm <project>` | Permanently delete Relay history | Yes, destructive |
 
-Run `python3 .agent-relay/relay.py --help` for every option.
+Agents can read the installed [`SKILL.md`](./skills/agent-relay/SKILL.md) for the complete call sequence. Automation developers can run `python3 .agent-relay/relay.py --help` for every option.
 
 ## Files and Computer Changes
 
@@ -480,44 +468,6 @@ DO_NOT_TRACK=1 npx --yes skills add . --list
 
 GitHub Actions runs the same suite on Python 3.9, 3.11, and 3.13.
 
-## Uninstall and Recovery
-
-Preview first:
-
-```bash
-python3 .agent-relay/relay.py uninstall --dry-run
-```
-
-Remove project capability:
-
-```bash
-python3 .agent-relay/relay.py uninstall --yes
-```
-
-Default uninstall:
-
-- removes Agent Relay managed blocks;
-- deletes unchanged owned adapters;
-- removes project-local `relay.py`;
-- preserves goals, events, versions, HANDOFF, and backups;
-- preserves and reports locally modified adapters.
-
-Permanent history deletion must use the installer script:
-
-```bash
-python3 scripts/relay.py purge \
-  --project-root "/absolute/project/path" \
-  --yes \
-  --confirm "project-directory-name"
-```
-
-Removing a global Skill does not modify initialized projects:
-
-```bash
-npx skills remove --global agent-relay
-```
-
-For a GitHub CLI preview installation, run `gh skill list` to locate the current harness directory and remove it according to that harness's directory rules. The current `gh skill` manual does not expose a remove subcommand.
 
 ## Limitations
 

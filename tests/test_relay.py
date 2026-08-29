@@ -152,6 +152,13 @@ class RelayTestCase(unittest.TestCase):
         ]
         for relative in expected:
             self.assertTrue((self.root / relative).exists(), relative)
+        agents_text = (self.root / "AGENTS.md").read_text(encoding="utf-8")
+        bridge_text = (
+            self.root / ".agents" / "skills" / "agent-relay" / "SKILL.md"
+        ).read_text(encoding="utf-8")
+        self.assertIn("complete restore requires separate explicit confirmation", agents_text)
+        self.assertIn("uninstalling and restoring Agent Relay", bridge_text)
+        self.assertIn("A complete restore requires explicit confirmation", bridge_text)
         doctor = self.json_output("doctor")
         self.assertEqual(doctor["health"], "healthy")
 

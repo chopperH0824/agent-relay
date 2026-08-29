@@ -8,7 +8,8 @@ All notable changes to Agent Relay are documented here. The project follows [Sem
 
 - Made a single one-line request for the agent to install and enable Agent Relay the primary Quick Start, with the manual `npx` command immediately after it.
 - Updated Skill discovery and continuation rules so an agent that just installed the Skill proceeds into project setup without asking the user to repeat the request.
-- Simplified the bilingual Quick Start and demo; status can be requested in natural language without remembering Relay commands.
+- Reframed initialization, daily work, status, goals, coordination, sealing, and health checks as natural-language requests; CLI details now live in an Agent/automation reference.
+- Added natural-language safe uninstall and complete project-restore flows, including history deletion, installer-Skill removal, modified-adapter preservation, and scope warnings.
 
 ## [0.1.0] - 2026-08-28
 

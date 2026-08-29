@@ -329,6 +329,7 @@ During and after work:
 - Never persist tokens, passwords, cookies, private keys, complete environment variables, or credentials.
 - When the user asks for status, run `report`; it must not claim work or mutate state.
 - When the user clearly requests a final version or immediate delivery, run `seal` for the explicit artifact scope. Ask when finalization scope is ambiguous.
+- When the user asks to uninstall Agent Relay, preview the removal and preserve history by default. A complete restore requires separate explicit confirmation before purging `.agent-relay/` and removing the installed Skill; never force-delete locally modified adapters.
 - Respect active write-scope conflicts. Split work, wait, or use a separate Git worktree instead of bypassing a live lease.
 """
 
@@ -342,7 +343,7 @@ GITIGNORE_BODY = """
 
 PROJECT_SKILL = """---
 name: agent-relay
-description: Maintains durable project handoff, goal, task, status, environment, and sealed-version state. Use whenever entering a project containing .agent-relay, before substantive edits, when reporting progress, when handing work to another agent, or when the user finalizes a deliverable.
+description: Maintains durable project handoff, goal, task, status, environment, and sealed-version state. Use whenever entering a project containing .agent-relay, before substantive edits, when reporting progress, handing work to another agent, finalizing a deliverable, or uninstalling and restoring Agent Relay.
 license: MIT
 compatibility: Requires Python 3.9 or newer in the project environment.
 metadata:
@@ -359,7 +360,8 @@ Treat `.agent-relay/` at the project root as the canonical state. The current us
 3. Use `checkpoint` during long work and `finish` with the result, changed paths, verification, blockers, and next step.
 4. Run `report` for status questions. It is read-only.
 5. Run `seal --yes` only when finalization and artifact scope are explicit; otherwise ask.
-6. Never write secrets, full conversations, or hidden model reasoning to Relay state.
+6. For uninstall requests, preview and preserve Relay history by default. A complete restore requires explicit confirmation before permanent history deletion and installer-Skill removal. Preserve locally modified adapters.
+7. Never write secrets, full conversations, or hidden model reasoning to Relay state.
 
 Run `python3 .agent-relay/relay.py --help` for command details.
 """

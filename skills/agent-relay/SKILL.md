@@ -1,6 +1,6 @@
 ---
 name: agent-relay
-description: Installs and operates durable project-level handoff, goal, task, status, environment, and sealed-version state across AI coding agents. Use when the user asks to install, enable, or set up Agent Relay, when entering a Relay-enabled project, handing work between agents, checking project status, coordinating concurrent edits, or finalizing deliverables.
+description: Installs and operates durable project-level handoff, goal, task, status, environment, and sealed-version state across AI coding agents. Use when the user asks to install, enable, set up, uninstall, or restore Agent Relay; when entering a Relay-enabled project; when handing work between agents, checking project status, coordinating concurrent edits, or finalizing deliverables.
 license: MIT
 compatibility: Requires Python 3.9 or newer. Writes only inside the user-confirmed project root and does not require network access after installation.
 metadata:
@@ -153,6 +153,27 @@ python3 .agent-relay/relay.py seal \
 ```
 
 Sealing never overwrites an existing version. It records SHA-256 for copied artifacts. In a Git repository, a manifest-only code version may omit `--artifact` and record the current Git reference without committing.
+
+## Handle natural-language uninstall and restore requests
+
+Treat requests to uninstall, remove, or restore a project without Agent Relay as lifecycle operations; do not ask the user to translate them into commands.
+
+For a safe uninstall that preserves history:
+
+1. Run the installed runtime's `uninstall --dry-run`.
+2. Show every managed entry that will be removed and every history or locally modified file that will be preserved.
+3. Ask one concise confirmation, then run `uninstall --yes`.
+4. Report preserved Relay history and any adapter that could not be removed safely.
+
+For a complete restore to a structure without Relay:
+
+1. Preview the safe uninstall and the permanent history purge together.
+2. State explicitly that goals, events, sealed versions, and backups under `.agent-relay/` will be permanently deleted, while unrelated source-code changes will not be reverted.
+3. After explicit confirmation, run the safe uninstall, then use this installer Skill's `scripts/relay.py purge` with the required project-name confirmation.
+4. Remove the project-level installer Skill according to the active Harness installation record as the final step. Remove a global Skill only when the user explicitly requests global scope.
+5. Never force-delete a locally modified adapter; preserve it and report the conflict.
+
+A request to "restore the project" means removing Agent Relay's installation footprint. It does not authorize reverting business files changed during normal agent work.
 
 ## Diagnose, uninstall, and purge
 
