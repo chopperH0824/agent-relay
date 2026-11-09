@@ -2,7 +2,7 @@
 
 ## 一句话定义
 
-Agent Relay 是一个**只需执行一次的项目安装 Skill**，当前正式版本为 `v0.1.0`。
+Agent Relay 是一个**只需执行一次的项目安装 Skill**，当前正式版本为 `v0.2.0`。
 
 ```bash
 npx skills add chopperH0824/agent-relay --skill agent-relay
@@ -171,7 +171,7 @@ flowchart LR
 
 WorkBuddy 公开的自定义 Skill 以 `skill.yml` 为主，TraeWork 则原生使用 `SKILL.md`；两者必须采用不同适配器。办公 Agent 还必须记录授权文件夹及本地/云端运行环境，不能默认扫描项目外文件。
 
-## 环境记录的 v0.1 边界
+## 环境记录的边界
 
 `start` 根据当前命令参数和安全白名单创建环境快照；相同内容通过指纹复用。
 
@@ -190,7 +190,7 @@ WorkBuddy 公开的自定义 Skill 以 `skill.yml` 为主，TraeWork 则原生�
 - 完整环境变量、MCP 配置原文、SSH 私钥或完整聊天。
 - 模型隐含思维过程。
 
-v0.1 不主动扫描用户级 MCP、插件或 SSH 配置。若历史流程依赖当前没有的工具，Agent 应说明缺少什么、可替代什么及结果差异，并在采用实质不同方案前取得确认。
+Agent Relay 不主动扫描用户级 MCP、插件或 SSH 配置。若历史流程依赖当前没有的工具，Agent 应说明缺少什么、可替代什么及结果差异，并在采用实质不同方案前取得确认。
 
 ## 边界与可靠性
 
@@ -200,10 +200,14 @@ v0.1 不主动扫描用户级 MCP、插件或 SSH 配置。若历史流程依赖
 - 初始化必须幂等、支持预览和卸载，不能覆盖现有 `AGENTS.md` 等文件。
 - 共享记录必须脱敏；本机路径、锁和缓存默认加入 `.gitignore`。
 
-## `v0.1.0` 已实现命令
+## 已实现命令
 
 ```text
 relay init       dry-run 后安装或更新项目常驻能力
+relay migrate    预览并应用 Schema 1 → 2 迁移
+relay hooks      查看、启用或关闭可选生命周期 Hook
+relay hook       由运行器以受限 JSON 触发生命周期事件
+relay worktree   查看、启用或关闭跨 worktree 共享租约
 relay start      读取环境、创建任务并认领写范围
 relay checkpoint 保存长任务接手点并续租
 relay finish     记录结果、释放任务并刷新交接

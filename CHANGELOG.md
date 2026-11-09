@@ -4,6 +4,29 @@ All notable changes to Agent Relay are documented here. The project follows [Sem
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-09
+
+### Added
+
+- Previewable Schema `1` → `2` migration via `migrate --dry-run` / `migrate --yes`. Read-only commands keep working on schema `1` and mark `migration_required`; writes require the migration. Migration backs up `config.json` and `HANDOFF.md`, sets only the schema markers in `config.json` and `goals.json`, records a `migrations` entry and a `schema-migrated` event, and is idempotent.
+- Opt-in lifecycle hooks (`hooks status|enable|disable`, `hook <event>`) for `before-write`, `checkpoint`, `task-finish`, `session-start`, and `session-end`. Hooks are disabled by default, never edit harness configuration, accept only documented fields from bounded JSON on stdin (64 KiB cap), and are rejected before any write otherwise.
+- Opt-in cross-worktree coordination (`worktree status|enable|disable`). The registry lives in the common Git directory (`agent-relay/coordination.json` plus a sibling lock) so Git worktree cleanup cannot discard live claims; each worktree must enable it separately.
+- Report fields `state_schema_version`, `migration_required`, `hooks_enabled`, and a `coordination` summary of mode, registered worktrees, and active claims; `doctor` adds a coordination check.
+- Regression tests for migration, hook validation, worktree conflicts, registry tampering, and read-only behavior while coordinated.
+
+### Changed
+
+- `start` and `checkpoint` pre-register shared claims before the local write; `finish` releases the local lease before the shared claim so interruption only over-reserves.
+- Config state now carries `hooks`, `coordination`, and a migration log; a future schema is refused rather than interpreted.
+- Uninstall leaves worktree coordination first and refuses to proceed when active claims would leak to other worktrees.
+
+### Fixed
+
+- State locks record an identity, are removed only by their owner, and are reclaimed after the two-minute staleness window only when the recorded PID is no longer running; an unexpected symlink lock is refused.
+- `init` on schema `1` no longer ignores the migration flag before it is computed, and no longer silently replaces a missing `goals.json` during a refresh.
+- Task file paths and working-tree member paths are validated through symlink-checked resolution.
+- CLI errors redact secret-looking substrings and report filesystem errors as user-actionable failures instead of tracebacks.
+
 ## [0.1.1] - 2026-11-09
 
 ### Fixed
@@ -46,6 +69,7 @@ All notable changes to Agent Relay are documented here. The project follows [Sem
 - Manual WorkBuddy bridge guidance without inventing an undocumented `skill.yml` schema.
 - MIT license, CI matrix, unit/integration tests, bilingual documentation, demo, and social preview assets.
 
-[Unreleased]: https://github.com/chopperH0824/agent-relay/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/chopperH0824/agent-relay/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/chopperH0824/agent-relay/releases/tag/v0.2.0
 [0.1.1]: https://github.com/chopperH0824/agent-relay/releases/tag/v0.1.1
 [0.1.0]: https://github.com/chopperH0824/agent-relay/releases/tag/v0.1.0

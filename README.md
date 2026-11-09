@@ -72,7 +72,7 @@ Agent 将自然语言意图转换为项目内操作。历史目标只提供上�
 | 希望项目自己长期保留交接能力 | 希望项目指令绕过系统、组织或用户权限策略 |
 
 > [!NOTE]
-> **当前正式版本：`v0.1.1`。** 本次修正阻塞任务、目标排序和租约检查，增加封存文件差异、升级保护与只读多项目盘点，保持 Schema 1。CI 覆盖 Python 3.9、3.11 和 3.13；适配器生成测试不等于所有封闭产品的真实会话验证。
+> **当前正式版本：`v0.2.0`。** 本次加入 Schema 1 → 2 的可预览迁移、默认关闭的生命周期 Hook 接入，以及需要每个 worktree 单独启用的跨 worktree 租约协调，并强化锁与并发安全。CI 覆盖 Python 3.9、3.11 和 3.13；适配器生成测试不等于所有封闭产品的真实会话验证。
 
 ## 它解决什么问题
 
@@ -97,7 +97,7 @@ Agent Relay 在项目里维护一个小而明确的交接层，让 Agent 先读�
 | 自动记录 | 任务结束时记录结果、文件、验证和下一步 | 对话切换后丢失可执行上下文 |
 | 快速汇报 | `relay report` 固定格式输出当前情况 | 为回答状态而翻阅全部历史 |
 | 自动封版 | 明确交付时创建不可覆盖的 `vNNN` 版本 | 后续修改覆盖已交付成果 |
-| 自动协调 | 任务租约和写入范围冲突检测 | 多 Agent 同时修改同一文件 |
+| 自动协调 | 任务租约和写入范围冲突检测，可选跨 worktree 共享租约 | 多 Agent 同时修改同一文件 |
 
 ## 为什么只安装一次
 
@@ -172,7 +172,7 @@ gh skill install chopperH0824/agent-relay agent-relay --scope user
 可用发布标签固定供应链版本：
 
 ```bash
-gh skill install chopperH0824/agent-relay agent-relay@v0.1.1 --scope user
+gh skill install chopperH0824/agent-relay agent-relay@v0.2.0 --scope user
 ```
 
 `npx skills` 是第三方安装工具并包含匿名遥测；可用 `DO_NOT_TRACK=1` 关闭。`gh skill` 需要 GitHub CLI 2.90.0+，当前仍是 preview 功能。安装前请审查 [`SKILL.md`](./skills/agent-relay/SKILL.md) 和运行脚本。
@@ -232,7 +232,7 @@ Agent 使用新版安装器预览并确认后刷新。运行时必须匹配已�
 ```text
 Agent Relay report
 Health: healthy
-Project goal: 发布 v0.1.1
+Project goal: 发布 v0.2.0
 Active work: task-id · owner · docs/**
 Blocked work: None
 Last completed: 安装器和运行时测试通过
@@ -296,7 +296,7 @@ flowchart LR
 | 只读任务 | 无需声明写范围 |
 | 必须并行改同一模块 | 使用独立 Git worktree 后审查合并 |
 
-v0.1 的锁保证面向同一台电脑的本地文件系统；不承诺跨机器、NFS、Dropbox 或网盘同步目录的强一致性。
+锁保证面向同一台电脑的本地文件系统；不承诺跨机器、NFS、Dropbox 或网盘同步目录的强一致性。需要并行修改同一模块时，可让同仓库的多个 worktree 各自启用共享租约，但它们仍必须位于同一台机器。
 
 ## 版本封存
 
@@ -401,6 +401,12 @@ project/
 
 修改前副本保存在 `.agent-relay/backups/<timestamp>/`。本机路径、锁、备份和版本 artifact 默认被 Git 忽略。
 
+### 迁移与可选能力
+
+旧项目升级时，先让 Agent **“预览并把 Agent Relay 状态迁移到当前版本”**。迁移只改写 `config.json` 与 `goals.json` 的 Schema 标记，目标、任务、事件、封版和环境保持不变，旧配置先备份。
+
+生命周期 Hook 默认关闭，只在用户自己的运行器需要自动记录时启用；它不会修改任何 Harness 全局配置。跨 worktree 协调同样需要在该仓库的每个 worktree 中单独启用。
+
 ## 它不会做什么
 
 Agent Relay 默认不会：
@@ -434,7 +440,7 @@ Agent Relay 默认不会：
 
 “官方支持某种入口”“安装器能放入 Skill”“Agent Relay 已在真实产品中回归”是三件不同的事。本项目分别标注。
 
-### v0.1 直接生成并由测试覆盖的入口
+### 直接生成并由测试覆盖的入口
 
 | 产品 / Harness | 入口 | 当前结论 |
 | --- | --- | --- |
@@ -452,11 +458,11 @@ Agent Relay 默认不会：
 
 ### 标准生态入口
 
-`--adapters all` 还可以生成 Windsurf、Roo、Kilo、Continue、Kiro、Goose 和 OpenHands 的标准 Skill 路径。Aider、Factory Droid、Junie、Devin、Warp、Zed、Augment、Jules、Antigravity 等可继续使用 `AGENTS.md` 或通用 `.agents/skills/`，但 v0.1 不把“有生态路径”描述成完整产品回归。
+`--adapters all` 还可以生成 Windsurf、Roo、Kilo、Continue、Kiro、Goose 和 OpenHands 的标准 Skill 路径。Aider、Factory Droid、Junie、Devin、Warp、Zed、Augment、Jules、Antigravity 等可继续使用 `AGENTS.md` 或通用 `.agents/skills/`，但不把“有生态路径”描述成完整产品回归。
 
 ### WorkBuddy 与手动模式
 
-腾讯 WorkBuddy 的公开自定义 Skill 结构以 `skill.yml`、实现文件和 README 为主，但公开指南没有稳定字段级 Schema。v0.1 不生成猜测格式，只在 `.agent-relay/integrations/workbuddy/README.md` 提供安全桥接：授权单一项目文件夹，并只读调用 `relay report --json`。
+腾讯 WorkBuddy 的公开自定义 Skill 结构以 `skill.yml`、实现文件和 README 为主，但公开指南没有稳定字段级 Schema。安装器不生成猜测格式，只在 `.agent-relay/integrations/workbuddy/README.md` 提供安全桥接：授权单一项目文件夹，并只读调用 `relay report --json`。
 
 通义灵码 IDE 与 Qoder CN CLI 分开识别。文心快码 Comate、CodeGeeX、CodeArts Snap、Fitten Code、iFlyCode 等未核实稳定项目 Skill 入口的产品保持手动交接模式，不声称自动加载。
 
@@ -473,6 +479,9 @@ Agent Relay 默认不会：
 - 任务租约、过期处理和写范围冲突；
 - `report` 状态文件零变化；
 - 目标生命周期；
+- Schema 1 → 2 迁移（只读预览、零副作用、幂等、历史保留、备份）；
+- 生命周期 Hook（默认关闭、字段白名单、输入上限、只解析不执行）；
+- 跨 worktree 协调（同仓库双 worktree 冲突、认领一致性、注册表校验、退出清理）；
 - 阻塞与完成分离、完成备注、明确目标排序、租约过期警告；
 - Git/非 Git 封存差异、只读盘点、读取范围与未知结果；
 - 升级备份、旧桥接更新和本地手改文件保护；
@@ -493,12 +502,12 @@ GitHub Actions 在 Python 3.9、3.11 和 3.13 上运行同一测试套件。
 ## 限制
 
 - 项目规则是模型上下文，不是系统级强制策略；不同 Agent 的遵从程度可能不同。
-- v0.1 没有全局 Hook 或后台进程，生命周期动作由项目指令引导 Agent 调用。
+- 没有后台进程或全局 Hook 安装器；生命周期 Hook 默认关闭，只由用户自己的运行器或包装脚本显式调用。
 - 语义封版由 Agent 判断；底层 `seal` 只接受明确参数，不自行分析聊天。
 - Harness 适配文件通过测试不等于每个闭源产品都完成真实会话回归。
 - 无法访问的跨应用聊天保持未知，不会自动恢复。
 - 写范围冲突检测故意偏保守，复杂 glob 可能被视为冲突。
-- 本地锁不保证跨机器或网络文件系统强一致。
+- 本地锁不保证跨机器或网络文件系统强一致；跨 worktree 协调只覆盖同一台机器上共享同一 Git 目录的 worktree。
 - artifact 默认不提交 Git，且会占用本地磁盘。
 - Skill 本身拥有 Agent 授予的执行能力；安装前仍需代码审查和 Harness 命令批准。
 
@@ -520,17 +529,21 @@ GitHub Actions 在 Python 3.9、3.11 和 3.13 上运行同一测试套件。
 
 不一定。只有上下文明确表示完整交付物现在可以交付时才封版；范围不明必须先询问。
 
+### 旧项目要做什么？
+
+升级 Skill 不会自动改动项目。对确认要更新的项目，Agent 会先 `migrate --dry-run` 预览，再 `migrate --yes` 把 Schema 1 状态迁移到 2；目标、任务、事件、封版和环境保持不变，旧配置会先备份。只读的 `report` 和 `doctor` 在迁移前仍可用，并会标注需要迁移。
+
 ### 为什么 report 和 status 分开？
 
 `report` 面向用户，固定输出当前情况；`status` 展开底层目标、任务、事件、版本和适配器；`doctor` 验证安装与完整性。
 
 ### 它会保存 MCP Token 或 SSH 私钥吗？
 
-不会。v0.1 不读取私钥内容，不复制完整 MCP 配置或环境变量；敏感字段和常见 Token 形式在落盘前脱敏。
+不会。Agent Relay 不读取私钥内容，不复制完整 MCP 配置或环境变量；敏感字段和常见 Token 形式在落盘前脱敏。跨 worktree 注册表只记录本机路径哈希、写入范围和租约时间，不记录文件内容。
 
 ### 多 Agent 如何避免撞文件？
 
-每个修改任务先声明项目相对写范围。活跃租约重叠时第二个任务失败，需等待、拆分或使用独立 worktree。
+每个修改任务先声明项目相对写范围。活跃租约重叠时第二个任务失败，需等待、拆分或使用独立 worktree。同一仓库的多个 worktree 各自执行一次 `worktree enable` 后共享租约，未启用的 worktree 继续使用自己的本地状态。
 
 ## 路线图
 
@@ -540,9 +553,9 @@ GitHub Actions 在 Python 3.9、3.11 和 3.13 上运行同一测试套件。
 - [x] 目标、任务租约、事件、环境、快报和封版
 - [x] 直接 Harness 适配器与 WorkBuddy 手动桥接
 - [x] 测试矩阵、MIT License 和首个 `v0.1.0` Release
+- [x] 可选生命周期 Hook，不静默修改全局配置（`v0.2.0`）
+- [x] `v0.2` Schema 迁移与跨 worktree 协调增强（`v0.2.0`）
 - [ ] 为已核实产品增加真实会话兼容回归记录
-- [ ] 可选生命周期 Hook，不静默修改全局配置
-- [ ] `v0.2` Schema 迁移与跨 worktree 协调增强
 
 ## 文档
 

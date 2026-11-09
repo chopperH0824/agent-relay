@@ -31,9 +31,9 @@ The current user request always outranks goals and historical next steps.
 └── runtime/
 ```
 
-Shared operational records use JSON Schema version `1`. Runtime writes use a same-directory temporary file, `fsync`, and atomic rename.
+Project state uses JSON Schema version `2` as of Agent Relay 0.2.0. Schema `1` state from 0.1.x remains readable for reports and `doctor`, but every write requires an explicit `migrate`. Runtime writes use a same-directory temporary file, `fsync`, and atomic rename.
 
-- `config.json`: runtime/schema version, installed runtime SHA-256, project UUID, adapter inventory, managed path metadata, current environment ID, and safety policy.
+- `config.json`: runtime/schema version, installed runtime SHA-256, project UUID, adapter inventory, managed path metadata, current environment ID, safety policy, `hooks`, `coordination`, and the migration log.
 - `goals.json`: explicit or candidate goals with long-term/short-term scope and lifecycle status.
 - `tasks/<id>.json`: owner, status, lease expiration, write scopes, result, changed paths, verification, blockers, and next step.
 - `events/<id>.json`: one immutable operational event per file.
@@ -46,6 +46,10 @@ Shared operational records use JSON Schema version `1`. Runtime writes use a sam
 | Command | State effect | Key behavior |
 | --- | --- | --- |
 | `init` | Write | Requires `--yes`; use `--dry-run` first |
+| `migrate` | Write | Requires `--yes`; previews schema `1` to `2` upgrade and backs up state |
+| `hooks` | Write/read | `status`, `enable`, `disable`; project-local opt-in only |
+| `hook` | Write/read | Bounded JSON on stdin for `before-write`, `checkpoint`, `task-finish`; `session-start`/`session-end` are read only |
+| `worktree` | Write/read | `status`, `enable`, `disable`; shared leases in the common Git directory |
 | `start` | Write | Claims project-relative write scopes and creates a lease |
 | `checkpoint` | Write | Updates one active task and renews its lease |
 | `finish` | Write | Completes, blocks, or cancels one task and releases its lease |
@@ -76,11 +80,31 @@ Shared operational records use JSON Schema version `1`. Runtime writes use a sam
 
 Only the latest manifest's files are compared; newly added or unselected files are outside coverage. Sealed-copy integrity remains the separate `doctor` check.
 
+### Schema migration
+
+`migrate --dry-run` reports the `1` to `2` plan, the preserved record families, and the backup directory; it writes nothing. `migrate --yes` backs up `config.json` and `HANDOFF.md`, sets `schema_version` to `2` in `config.json` and `goals.json`, initializes `hooks.enabled=false` and `coordination.mode=local`, appends one entry to `config.migrations`, and records a `schema-migrated` event. Goals, tasks, events, sealed versions, and environments are not rewritten, and a completed migration is a no-op. A future schema is refused. Commands that only read (`report`, `status`, `doctor`) still work on schema `1`; the report marks `migration_required`.
+
+### Lifecycle hooks
+
+Hooks are off by default. `hooks enable` edits only `config.json`, `HANDOFF.md`, events, and backups; it never writes harness configuration. Disabled hooks return `{"enabled": false, "ignored": true}` without writing. Enabled hook payloads are capped at 64 KiB, must be JSON objects, and accept only documented fields:
+
+| Event | Required | Optional |
+| --- | --- | --- |
+| `before-write` | `title` | `owner`, `scopes`, `harness`, `model`, `capabilities`, `lease_minutes`, `goal` |
+| `checkpoint` | `task_id`, `summary` | `changed`, `verification`, `blockers`, `next_step`, `lease_minutes` |
+| `task-finish` | `task_id`, `result`, `status` | `changed`, `verification`, `blockers`, `next_step` |
+
+`task-finish` status must be `completed`, `blocked`, or `cancelled`. String fields are non-empty and at most 4,096 characters; list fields hold at most 128 non-empty strings. Invalid input fails before any write.
+
+### Cross-worktree coordination
+
+Each worktree opts in separately with `worktree enable --yes`. The shared registry is `<common git dir>/agent-relay/coordination.json` with a sibling `coordination.lock`, so Git worktree cleanup cannot discard claims. A claim records the worktree ID (a hash of the worktree root), owner, write scopes, and lease expiry. `start` rejects overlapping scopes held by another worktree, and `finish`/`checkpoint` require the local claim to match the shared one. `doctor` fails if an active local task has a missing or inconsistent shared claim. `worktree disable` is refused while this worktree holds active claims, and `uninstall` runs it first. Coverage is same-machine worktrees that share one common Git directory; a worktree without its own Relay installation stays local.
+
 ### Upgrades and fleet audits
 
 Run the new installer against an explicitly selected existing project using its existing adapter mode. Preview and confirm `init` as usual. The runtime must match its recorded SHA-256 or one of the known pre-checksum v0.1.0 revisions. Unknown local edits cause a conflict; no force-replace flag is provided.
 
-Refreshes back up the previous runtime, config, handoff, and modified adapters under a unique timestamp. Owned bridges update only when their recorded hash matches; local changes are preserved. Goals, tasks, events, and versions are not migrated or rewritten, though the refresh adds its own event and regenerates the handoff.
+Refreshes back up the previous runtime, config, handoff, and modified adapters under a unique timestamp. Owned bridges update only when their recorded hash matches; local changes are preserved. A refresh of schema `1` state performs the same migration as `migrate --yes`. Goals, tasks, events, and versions are not rewritten, though the refresh adds its own event and regenerates the handoff.
 
 `scripts/fleet_report.py` reads approved `--project` paths and/or each `--root` plus immediate children using the trusted installer code. It never executes project-local Python, initializes projects, or writes results. Missing explicit projects and invalid state remain visible. `runtime_version` comes from installed metadata; doctor results use the current reader. The scan is sequential and a full doctor may read all sealed copies. Exit `0` means the audit completed, not that every row is healthy.
 
@@ -93,9 +117,9 @@ Refreshes back up the previous runtime, config, handoff, and modified adapters u
 
 ## Concurrency
 
-Each modifying command acquires `.agent-relay/runtime/state.lock` with exclusive creation. Locks older than two minutes are treated as abandoned command locks; task leases remain independent.
+Each modifying command acquires `.agent-relay/runtime/state.lock` with exclusive creation, and coordinated worktrees additionally take the shared `<common git dir>/agent-relay/coordination.lock`. A lock older than two minutes is reclaimed only when its recorded PID is gone; a live owner keeps the lock. Locks record an identity and are removed only by their owner. Task leases remain independent.
 
-Write-scope comparisons are deliberately conservative. Exact paths, matching globs, and overlapping literal prefixes conflict. Read-only tasks with no scope may run concurrently. Network filesystems, cloud-sync folders, and cross-machine locking are outside the v0.1 consistency guarantee.
+Write-scope comparisons are deliberately conservative. Exact paths, matching globs, and overlapping literal prefixes conflict. Read-only tasks with no scope may run concurrently. Network filesystems, cloud-sync folders, and cross-machine locking are outside the consistency guarantee, and worktree coordination does not extend it.
 
 ## Version sealing
 

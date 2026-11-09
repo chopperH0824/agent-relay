@@ -65,6 +65,9 @@ def summarize(project: Path) -> Dict[str, Any]:
         "runtime_version": report.get("runtime_version") or doctor.get("installed_runtime_version"),
         "runtime_sha256": doctor.get("runtime_sha256"),
         "reader_version": doctor.get("runtime_version"),
+        "migration_required": report.get("migration_required"),
+        "state_schema_version": report.get("state_schema_version"),
+        "coordination_mode": (report.get("coordination") or {}).get("mode"),
         "doctor_issues": [
             check for check in doctor.get("checks", []) if check.get("status") in ("warn", "fail")
         ],

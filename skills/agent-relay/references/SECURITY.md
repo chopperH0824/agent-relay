@@ -50,6 +50,12 @@ The fleet helper imports the trusted Skill runtime instead of executing project-
 
 Artifact-drift reads follow only the latest seal's selected regular files, reject symlink path components and Relay/Git internal paths, and have a 100 MiB report budget. Failed or skipped comparisons remain unknown. Doctor separately hashes sealed copies and may take longer on large histories. These are local filesystem safeguards, not protection against a malicious process concurrently replacing files during a command.
 
+## Lifecycle hooks and shared worktrees
+
+Lifecycle hooks are off by default and never edit harness configuration. Enabled hook input is bounded to 64 KiB of JSON with documented fields only, so a wrapper cannot write arbitrary state through them.
+
+Worktree coordination writes one registry inside the repository's common Git directory (`.git/agent-relay/coordination.json` plus `coordination.lock`). It records only worktree IDs derived from local paths, local absolute worktree roots, owners, write scopes, and lease expiries; it never records file contents. Those roots are already machine-local, like `environments/local/`, and the shared Git directory is normally not committed. Enabling coordination changes where cross-worktree leases are stored, so apply it only where all participating worktrees are trusted on the same machine. The registry is validated (size, shape, member hashes, lease timestamps) before every write, and a missing or invalid registry blocks writes instead of silently degrading to uncoordinated state. A lock is reclaimed only when its recorded PID is no longer running.
+
 ## Versions
 
 Sealed directories use monotonically increasing `vNNN` names and are never overwritten. Artifact copies are ignored by Git by default because they may be large or sensitive; manifests remain available for audit. Purge is the only command that deletes historical state and requires `--yes --confirm <project-name>`.

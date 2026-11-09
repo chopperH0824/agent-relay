@@ -4,7 +4,7 @@ description: Installs and operates durable project-level handoff, goal, task, st
 license: MIT
 metadata:
   author: chopperH0824
-  version: "0.1.1"
+  version: "0.2.0"
   homepage: https://github.com/chopperH0824/agent-relay
 ---
 
@@ -64,13 +64,15 @@ python3 "/absolute/project/path/.agent-relay/relay.py" report
 
 Updating this installer does not update project-local copies. For an explicitly requested project update, run this installer's `init --dry-run --project-root ...` with the project's existing adapter mode, review the plan, then apply the same options with `--yes` within the approved scope. Do not bulk-refresh other projects.
 
-Known legacy runtimes and unchanged recorded runtimes can be upgraded. Unknown or edited runtimes produce a conflict before writes; inspect the difference and preserve local changes instead of bypassing the checksum. Upgrades back up the runtime, config, handoff, and changed adapters. Unchanged owned bridges are refreshed; locally edited ones are retained and reported. Schema remains `1`, with no history rewrite.
+Known legacy runtimes and unchanged recorded runtimes can be upgraded. Unknown or edited runtimes produce a conflict before writes; inspect the difference and preserve local changes instead of bypassing the checksum. Upgrades back up the runtime, config, handoff, and changed adapters. Unchanged owned bridges are refreshed; locally edited ones are retained and reported.
+
+Schema `1` state (v0.1.x) stays readable by the new runtime but accepts no writes until migrated. For an approved project update, run `migrate --dry-run`, review the preserved history and backup paths, then `migrate --yes`. Migration rewrites `config.json` and `goals.json` schema markers only; goals, tasks, events, sealed versions, and environments are preserved and the previous config is backed up.
 
 ## Choose adapters
 
 - `--adapters minimal`: create `AGENTS.md`, the universal `.agents/skills/agent-relay/` bridge, and managed `.gitignore` entries.
 - `--adapters auto`: install the minimal set and add adapters for harness directories or instruction files already detected in the project. This is the default.
-- `--adapters all`: install all direct v0.1 adapters, including Claude, Gemini, Cursor, Copilot, CodeBuddy, Qoder, TRAE, Qwen Code, Kimi Code CLI, OpenCode, Cline, Pi, Windsurf, Roo, Kilo, Continue, Kiro, Goose, and OpenHands paths.
+- `--adapters all`: install all direct adapters, including Claude, Gemini, Cursor, Copilot, CodeBuddy, Qoder, TRAE, Qwen Code, Kimi Code CLI, OpenCode, Cline, Pi, Windsurf, Roo, Kilo, Continue, Kiro, Goose, and OpenHands paths.
 
 Use `all` only when the user prefers broad future portability and accepts the additional small adapter files. WorkBuddy uses a different `skill.yml` ecosystem and is documented as a manual bridge; do not describe it as a standard `SKILL.md` adapter.
 
@@ -106,7 +108,7 @@ python3 .agent-relay/relay.py start \
   --scope "tests/**"
 ```
 
-Declare only intended writes. Read-only work may omit `--scope`. Pass safe harness, model, and capability names with `--harness`, `--model`, and repeated `--capability` when known; never pass configuration values or credentials. If an active lease overlaps, do not bypass it: wait, split the work, coordinate with the owner, or use an isolated Git worktree.
+Declare only intended writes. Read-only work may omit `--scope`. Pass safe harness, model, and capability names with `--harness`, `--model`, and repeated `--capability` when known; never pass configuration values or credentials. If an active lease overlaps, do not bypass it: wait, split the work, coordinate with the owner, or use an isolated Git worktree. Separate worktrees of the same repository share leases only after each one opts in with `worktree enable`; an unregistered worktree keeps its own local state.
 
 If a lease expired, run `doctor` to inspect it and start a replacement task with the relevant predecessor ID in its operational summary. `start` marks expired active tasks as expired and records their IDs. Do not hand-edit task JSON to renew or complete old work.
 
@@ -148,6 +150,22 @@ Goals are reminders, not mandates. Never reject the current request because it d
 
 The summary uses the most recently updated active explicit goal; other active goals remain visible, and candidates are never silently promoted. Do not automatically complete old goals solely to tidy the summary.
 
+### Optional lifecycle hooks
+
+Lifecycle hooks are off by default and change no harness configuration. When the user wants an agent runner or wrapper to record work automatically rather than call commands directly, run `hooks enable --dry-run`, review the plan, then `hooks enable --yes`. A wrapper then calls `hook <event>` with a bounded JSON object on stdin:
+
+```bash
+echo '{"title":"Fix login","scopes":["src/**"]}' | python3 .agent-relay/relay.py hook before-write
+echo '{"task_id":"task-id","summary":"Root cause found"}' | python3 .agent-relay/relay.py hook checkpoint
+echo '{"task_id":"task-id","result":"Fixed","status":"completed"}' | python3 .agent-relay/relay.py hook task-finish
+```
+
+`session-start` and `session-end` accept no input and return the current report. Unknown fields, oversized input, and invalid statuses are rejected without writing. Hooks are optional convenience, not a substitute for the explicit commands above.
+
+### Coordinate concurrent worktrees
+
+Cross-worktree leases are opt-in per worktree because shared state moves into the repository's common Git directory. Preview with `worktree enable --dry-run`, then apply with `worktree enable --yes` in every worktree that should participate. `worktree status` shows the mode and other active claims; `worktree disable` requires no active local claims. Only same-machine worktrees of one repository share claims; machine-wide or cross-host locking is not provided.
+
 ### Audit several local projects
 
 Run the trusted installer helper against user-approved paths:
@@ -157,7 +175,7 @@ python3 scripts/fleet_report.py --root "/absolute/project-parent" --json
 python3 scripts/fleet_report.py --project "/absolute/project" --json
 ```
 
-Both options are repeatable. `--root` checks itself and its immediate children only, without recursive home-directory scanning. The helper reads schema-1 state with this Skill's code, does not execute each project's runtime, and does not initialize or refresh projects. It reports the installed version separately from the audit reader's diagnostics. Use the protocol reference for field and coverage details.
+Both options are repeatable. `--root` checks itself and its immediate children only, without recursive home-directory scanning. The helper reads project state with this Skill's code, does not execute each project's runtime, and does not initialize or refresh projects. It reports the installed version separately from the audit reader's diagnostics. Use the protocol reference for field and coverage details.
 
 ### Seal a final version
 
@@ -211,7 +229,7 @@ python3 .agent-relay/relay.py uninstall --dry-run
 python3 .agent-relay/relay.py uninstall --yes
 ```
 
-Uninstall removes only managed entry points and the runtime when unchanged. It preserves goals, events, versions, and backups. Locally edited owned adapters are preserved and reported.
+Uninstall removes only managed entry points and the runtime when unchanged. It preserves goals, events, versions, and backups. Locally edited owned adapters are preserved and reported. Uninstall also leaves shared worktree coordination first; it refuses to proceed if active local claims would otherwise leak into other worktrees.
 
 Permanent deletion requires both explicit flags and the project directory name:
 

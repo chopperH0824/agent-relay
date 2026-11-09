@@ -72,7 +72,7 @@ The agent translates intent into project-local operations. Historical goals prov
 | The project itself should retain handoff capability | You expect project rules to bypass system, organization, or user policy |
 
 > [!NOTE]
-> **Current release: `v0.1.1`.** This update fixes blocked-task summaries, goal ordering, and lease checks, and adds artifact drift, guarded upgrades, and read-only local project audits while keeping Schema 1. CI covers Python 3.9, 3.11, and 3.13. Adapter generation tests do not establish live-session compatibility with every closed-source harness.
+> **Current release: `v0.2.0`.** This release adds a previewable Schema 1 → 2 migration, opt-in lifecycle hooks that never edit harness configuration, per-worktree shared leases for worktrees of one repository, and stronger lock concurrency safety. CI covers Python 3.9, 3.11, and 3.13. Adapter generation tests do not establish live-session compatibility with every closed-source harness.
 
 ## What It Solves
 
@@ -172,7 +172,7 @@ gh skill install chopperH0824/agent-relay agent-relay --scope user
 Pin the supply-chain version to a release tag:
 
 ```bash
-gh skill install chopperH0824/agent-relay agent-relay@v0.1.1 --scope user
+gh skill install chopperH0824/agent-relay agent-relay@v0.2.0 --scope user
 ```
 
 `npx skills` is a third-party installer with anonymous telemetry; set `DO_NOT_TRACK=1` to disable it. `gh skill` requires GitHub CLI 2.90.0+ and is currently a preview feature. Review [`SKILL.md`](./skills/agent-relay/SKILL.md) and the runtime before installation.
@@ -232,7 +232,7 @@ The default report is a concise status summary:
 ```text
 Agent Relay report
 Health: healthy
-Project goal: Publish v0.1.1
+Project goal: Publish v0.2.0
 Active work: task-id · owner · docs/**
 Blocked work: None
 Last completed: Installer and runtime tests passed
@@ -296,7 +296,7 @@ flowchart LR
 | Read-only work | No write scope is required |
 | Same module must change concurrently | Use separate Git worktrees, then review and merge |
 
-v0.1 locks target a same-machine local filesystem. They do not promise cross-machine, NFS, Dropbox, or cloud-sync consistency.
+Locks target a same-machine local filesystem. They do not promise cross-machine, NFS, Dropbox, or cloud-sync consistency. Worktrees of one repository can opt in to shared leases, but they must still live on the same machine.
 
 ## Version Sealing
 
@@ -401,6 +401,12 @@ Existing instruction files receive only this bounded block:
 
 Pre-change copies live under `.agent-relay/backups/<timestamp>/`. Machine paths, locks, backups, and version artifacts are Git-ignored by default.
 
+### Migration and opt-in features
+
+For upgrades, ask the agent to **“preview and migrate this project's Agent Relay state.”** Migration rewrites only the `config.json` and `goals.json` schema markers; goals, tasks, events, sealed versions, and environments are preserved, and the previous config is backed up first.
+
+Lifecycle hooks are off by default and change no harness configuration; enable them only when the user's own runner should record work automatically. Cross-worktree coordination must be enabled separately in every worktree of the repository that should participate.
+
 ## What It Does Not Do
 
 By default, Agent Relay does not:
@@ -434,7 +440,7 @@ Read the full [Security and Privacy Reference](./skills/agent-relay/references/S
 
 “An official entry exists,” “an installer can place a Skill,” and “Agent Relay passed a live product test” are different claims. This repository labels them separately.
 
-### v0.1 entries generated and covered by tests
+### Entries generated and covered by tests
 
 | Product / harness | Entry | Current conclusion |
 | --- | --- | --- |
@@ -452,11 +458,11 @@ Read the full [Security and Privacy Reference](./skills/agent-relay/references/S
 
 ### Standard ecosystem entries
 
-`--adapters all` also generates standard paths for Windsurf, Roo, Kilo, Continue, Kiro, Goose, and OpenHands. Aider, Factory Droid, Junie, Devin, Warp, Zed, Augment, Jules, and Antigravity can continue through `AGENTS.md` or universal `.agents/skills/`, but v0.1 does not call an ecosystem path a complete product regression.
+`--adapters all` also generates standard paths for Windsurf, Roo, Kilo, Continue, Kiro, Goose, and OpenHands. Aider, Factory Droid, Junie, Devin, Warp, Zed, Augment, Jules, and Antigravity can continue through `AGENTS.md` or universal `.agents/skills/`, but does not call an ecosystem path a complete product regression.
 
 ### WorkBuddy and manual mode
 
-Tencent WorkBuddy documents custom Skills based on `skill.yml`, implementation files, and a README, but its public guide does not expose a stable field-level schema. v0.1 does not invent one. `.agent-relay/integrations/workbuddy/README.md` instead describes a safe bridge: authorize one project folder and call `relay report --json` read-only.
+Tencent WorkBuddy documents custom Skills based on `skill.yml`, implementation files, and a README, but its public guide does not expose a stable field-level schema. The installer does not invent one. `.agent-relay/integrations/workbuddy/README.md` instead describes a safe bridge: authorize one project folder and call `relay report --json` read-only.
 
 Alibaba Lingma IDE remains distinct from Qoder CN CLI. Baidu Comate, CodeGeeX, CodeArts Snap, Fitten Code, and iFlyCode remain manual handoff targets until a stable official project Skill entry is verified.
 
@@ -493,7 +499,7 @@ GitHub Actions runs the same suite on Python 3.9, 3.11, and 3.13.
 ## Limitations
 
 - Project rules are model context, not system enforcement; adherence differs among agents.
-- v0.1 has no global hook or daemon. Project instructions guide lifecycle command calls.
+- There is no daemon or global hook installer. Lifecycle hooks are off by default and run only when the user's own runner or wrapper calls them explicitly.
 - The agent interprets finalization semantics; the underlying `seal` command only accepts explicit parameters.
 - Passing adapter tests does not mean every closed-source harness has completed a live-session regression.
 - Inaccessible cross-application chats remain unknown.
@@ -526,11 +532,11 @@ No. It seals only when context clearly says the complete deliverable is ready no
 
 ### Does it store MCP tokens or SSH private keys?
 
-No. v0.1 does not read private-key contents or copy complete MCP configuration and environment variables. Sensitive fields and common token forms are redacted before persistence.
+No. Agent Relay does not read private-key contents or copy complete MCP configuration and environment variables. Sensitive fields and common token forms are redacted before persistence. The cross-worktree registry records only local path hashes, write scopes, and lease times, never file contents.
 
 ### How do agents avoid editing the same file?
 
-Every modifying task declares project-relative write scopes. A second overlapping active lease fails; agents must wait, split work, or use a separate worktree.
+Every modifying task declares project-relative write scopes. A second overlapping active lease fails; agents must wait, split work, or use a separate worktree. Worktrees of one repository share leases after each runs `worktree enable`; a worktree that never opts in keeps its own local state.
 
 ## Roadmap
 
@@ -540,9 +546,9 @@ Every modifying task declares project-relative write scopes. A second overlappin
 - [x] Goals, task leases, events, environments, reports, and version sealing
 - [x] Direct harness adapters and safe WorkBuddy manual bridge
 - [x] Test matrix, MIT License, and first `v0.1.0` Release
+- [x] Opt-in lifecycle hooks without silent global configuration changes (`v0.2.0`)
+- [x] `v0.2` schema migration and cross-worktree coordination (`v0.2.0`)
 - [ ] Add recorded live-session compatibility results for verified products
-- [ ] Optional lifecycle hooks without silent global configuration changes
-- [ ] `v0.2` schema migration and stronger cross-worktree coordination
 
 ## Documentation
 

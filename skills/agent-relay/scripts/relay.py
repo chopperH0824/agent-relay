@@ -23,13 +23,16 @@ from pathlib import Path, PurePosixPath
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 
-VERSION = "0.1.1"
-SCHEMA_VERSION = 1
+VERSION = "0.2.0"
+SCHEMA_VERSION = 2
+READABLE_SCHEMAS = (1, 2)
+REPORT_SCHEMA_VERSION = 1
 STATE_DIR_NAME = ".agent-relay"
 MANAGED_START = "<!-- agent-relay:start -->"
 MANAGED_END = "<!-- agent-relay:end -->"
 LOCK_STALE_SECONDS = 120
 REPORT_ARTIFACT_MAX_BYTES = 100 * 1024 * 1024
+HOOK_MAX_BYTES = 64 * 1024
 
 # Published v0.1.0 and the subsequent uninstall-guidance revision predate
 # runtime ownership hashes. Unknown legacy bytes require manual review.
@@ -288,12 +291,15 @@ class StateLock:
         self.path = path
         self.timeout = timeout
         self.acquired = False
+        self.identity = uuid.uuid4().hex
 
     def __enter__(self) -> "StateLock":
         self.path.parent.mkdir(parents=True, exist_ok=True)
         deadline = time.time() + self.timeout
-        payload = json.dumps({"pid": os.getpid(), "created_at": iso_now()})
+        payload = json.dumps({"pid": os.getpid(), "created_at": iso_now(), "identity": self.identity})
         while True:
+            if self.path.is_symlink():
+                raise RelayError("Refusing symlink state lock")
             try:
                 fd = os.open(str(self.path), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
                 with os.fdopen(fd, "w", encoding="utf-8") as handle:
@@ -304,8 +310,16 @@ class StateLock:
                 try:
                     age = time.time() - self.path.stat().st_mtime
                     if age > LOCK_STALE_SECONDS:
-                        self.path.unlink()
-                        continue
+                        owner = load_json(self.path, {})
+                        pid = owner.get("pid") if isinstance(owner, dict) else None
+                        if isinstance(pid, int) and pid > 0:
+                            try:
+                                os.kill(pid, 0)
+                            except ProcessLookupError:
+                                self.path.unlink()
+                                continue
+                            except PermissionError:
+                                pass
                 except FileNotFoundError:
                     continue
                 if time.time() >= deadline:
@@ -315,7 +329,9 @@ class StateLock:
     def __exit__(self, exc_type: Any, exc: Any, traceback: Any) -> None:
         if self.acquired:
             with contextlib.suppress(FileNotFoundError):
-                self.path.unlink()
+                owner = load_json(self.path, {})
+                if isinstance(owner, dict) and owner.get("identity") == self.identity:
+                    self.path.unlink()
 
 
 def managed_block(body: str) -> str:
@@ -395,7 +411,7 @@ description: Maintains durable project handoff, goal, task, status, environment,
 license: MIT
 metadata:
   author: chopperH0824
-  version: \"0.1.1\"
+  version: \"0.2.0\"
 ---
 
 # Agent Relay project bridge
@@ -473,7 +489,7 @@ class Relay:
         self.environments_dir = self.state / "environments"
         self.lock_path = self.state / "runtime" / "state.lock"
 
-    def require_initialized(self) -> Dict[str, Any]:
+    def require_initialized(self, writable: bool = False) -> Dict[str, Any]:
         for relative in ("config.json", "goals.json", "HANDOFF.md", "tasks", "events",
                          "versions", "environments/shared", "runtime"):
             no_symlink_member(self.root, "%s/%s" % (STATE_DIR_NAME, relative))
@@ -482,11 +498,389 @@ class Relay:
                 "Agent Relay is not initialized in %s. Run init --dry-run first." % self.root
             )
         config = load_json(self.config_path)
-        if not isinstance(config, dict) or config.get("schema_version") != SCHEMA_VERSION:
+        if not isinstance(config, dict) or config.get("schema_version") not in READABLE_SCHEMAS:
             raise RelayError("Unsupported or invalid Agent Relay configuration")
         if config.get("installed") is False:
             raise RelayError("Agent Relay was uninstalled from this project")
+        if writable and config["schema_version"] != SCHEMA_VERSION:
+            raise RelayError("Schema migration required; preview migrate --dry-run with the new installer")
+        if config.get("schema_version") == SCHEMA_VERSION:
+            if not isinstance(config.get("hooks"), dict) or type(config["hooks"].get("enabled")) is not bool:
+                raise RelayError("Invalid hooks configuration")
+            if not isinstance(config.get("coordination"), dict) or config["coordination"].get("mode") not in ("local", "git-common-dir"):
+                raise RelayError("Invalid worktree coordination configuration")
         return config
+
+    def migrate(self, dry_run: bool, confirmed: bool) -> Dict[str, Any]:
+        config = self.require_initialized()
+        if config["schema_version"] == SCHEMA_VERSION:
+            return {"dry_run": dry_run, "changed": False, "schema_version": SCHEMA_VERSION}
+        return self.initialize(config.get("adapter_mode", "auto"), dry_run, confirmed,
+                               None, None, None, [])
+
+    def _git_value(self, *args: str) -> Optional[str]:
+        code, value = run_command(["git", *args], self.root)
+        return value if code == 0 and value else None
+
+    def _common_git_dir(self) -> Optional[Path]:
+        # A directory that merely sits inside an enclosing Git repository keeps
+        # local state: only the project's own worktree root may share locks.
+        self._require_worktree_root()
+        if not (self.root / STATE_DIR_NAME / "config.json").is_file():
+            return None
+        # Git reports this path relative to the invoking worktree root.
+        value = self._git_value("rev-parse", "--git-common-dir")
+        if not value:
+            return None
+        common = Path(value)
+        if not common.is_absolute():
+            common = self.root / common
+        return common.resolve()
+
+    @staticmethod
+    def _member_id(root: Any) -> str:
+        return sha256_bytes(str(Path(str(root)).resolve()).encode("utf-8"))[:24]
+
+    def _worktree_id(self) -> str:
+        # The project-local runtime is the source of truth for which project a
+        # worktree owns, so state copied into a nested repository still maps to
+        # the worktree that hosts it.
+        runtime = self.state / "relay.py"
+        try:
+            if runtime.is_file() and not runtime.is_symlink():
+                return self._member_id(runtime.parent.parent.resolve())
+        except OSError:
+            pass
+        return self._member_id(self.root)
+
+    def _require_worktree_root(self) -> None:
+        code, top = run_command(["git", "rev-parse", "--show-toplevel"], self.root)
+        if code or not top:
+            raise RelayError("Worktree coordination requires a Git repository")
+        top_path = Path(top)
+        if not top_path.is_absolute():
+            top_path = self.root / top_path
+        if top_path.resolve() != self.root:
+            raise RelayError("Worktree coordination requires a Git worktree root")
+
+    def _coordination_path(self) -> Path:
+        self._require_worktree_root()
+        common = self._common_git_dir()
+        if common is None:
+            raise RelayError("Cannot locate the shared Git directory")
+        for part in (common, *common.parents):
+            if part.is_symlink():
+                raise RelayError("Shared Git directory must not contain symlinks")
+        if not common.is_dir():
+            raise RelayError("Shared Git directory is missing")
+        return common / "agent-relay" / "coordination.json"
+
+    def _coordination_enabled(self, config: Dict[str, Any]) -> bool:
+        return config.get("coordination", {}).get("mode") == "git-common-dir"
+
+    def _shared_registry_path(self) -> Path:
+        common = self._common_git_dir()
+        if common is None:
+            raise RelayError("Cannot locate the shared Git directory")
+        for part in (common, *common.parents):
+            if part.is_symlink():
+                raise RelayError("Shared Git directory must not contain symlinks")
+        return common / STATE_DIR_NAME / "coordination.json"
+
+    def _shared_registry_lock_path(self) -> Path:
+        return self._shared_registry_path().with_name("coordination.lock")
+
+    def _read_registry(self, allow_missing: bool = False) -> Optional[Dict[str, Any]]:
+        # The registry lives in the common Git directory because Git removes
+        # worktree-private files, which would silently discard shared claims.
+        path = self._shared_registry_path()
+        if not path.exists():
+            if allow_missing:
+                return {
+                    "schema_version": 1,
+                    "project_id": self.require_initialized()["project_id"],
+                    "members": {}, "claims": {},
+                }
+            raise RelayError(
+                "Shared coordination registry is missing; refusing uncoordinated writes"
+            )
+        if path.is_symlink() or not path.is_file() or path.stat().st_size > 1024 * 1024:
+            raise RelayError("Unsafe or oversized coordination registry")
+        data = load_json(path)
+        if (not isinstance(data, dict) or data.get("schema_version") != 1
+                or not isinstance(data.get("members"), dict)
+                or not isinstance(data.get("claims"), dict)):
+            raise RelayError("Invalid coordination registry")
+        # Worktrees are only coordinated after they adopt this registry, so a
+        # different project_id belongs to a worktree that drives its own state.
+        # Its members and live leases stay valid here and must be preserved.
+        if data.get("project_id") != self.require_initialized().get("project_id"):
+            data["project_id"] = self.require_initialized().get("project_id")
+        for member, details in data["members"].items():
+            if (not isinstance(details, dict)
+                    or details.get("worktree_id") != member
+                    or not os.path.isabs(str(details.get("root", "")))
+                    or member != self._member_id(details["root"])):
+                raise RelayError("Invalid coordination member")
+        for task_id, claim in data["claims"].items():
+            if (not re.fullmatch(r"task-[a-z0-9-]{1,80}", task_id)
+                    or not isinstance(claim, dict)
+                    or not re.fullmatch(r"[0-9a-f]{24}", str(claim.get("worktree_id")))
+                    or not isinstance(claim.get("lease_expires_at"), str)
+                    or parse_time(claim.get("lease_expires_at")) is None
+                    or not isinstance(claim.get("write_scopes"), list)
+                    or any(not isinstance(scope, str) for scope in claim["write_scopes"])):
+                raise RelayError("Invalid shared task claim")
+            for scope in claim["write_scopes"]:
+                normalize_scope(self.root, scope)
+        return data
+
+    def _save_registry(self, registry: Dict[str, Any]) -> None:
+        atomic_write(self._shared_registry_path(), json_text(sanitize(registry)))
+
+    def _shared_conflicts(self, registry: Dict[str, Any], scopes: Sequence[str]) -> None:
+        for task_id, claim in sorted(registry["claims"].items()):
+            if claim["worktree_id"] == self._worktree_id():
+                continue
+            if parse_time(claim["lease_expires_at"]) <= utc_now():
+                continue
+            if any(scopes_overlap(left, right)
+                   for left in scopes for right in claim["write_scopes"]):
+                raise RelayError(
+                    "Cross-worktree write-scope conflict: %s owns %s until %s"
+                    % (task_id, ", ".join(claim["write_scopes"]), claim["lease_expires_at"])
+                )
+
+    def _claim_for(self, task: Dict[str, Any]) -> Dict[str, Any]:
+        return {
+            "worktree_id": self._worktree_id(),
+            "owner": task.get("owner"),
+            "write_scopes": task["write_scopes"],
+            "lease_expires_at": task["lease_expires_at"],
+        }
+
+    @contextlib.contextmanager
+    def _task_lock(self, config: Dict[str, Any], mode: Optional[str] = None) -> Any:
+        with contextlib.ExitStack() as stack:
+            shared = ((mode or config.get("coordination", {}).get("mode"))
+                      == "git-common-dir")
+            if shared:
+                stack.enter_context(StateLock(self._shared_registry_lock_path()))
+            stack.enter_context(StateLock(self.lock_path))
+            current = self.require_initialized(writable=True)
+            if mode is None and current["coordination"] != config["coordination"]:
+                raise RelayError("Coordination settings changed; retry the command")
+            registry = self._read_registry() if shared else None
+            yield (shared, registry)
+
+    def _save_claim(self, shared: Tuple[bool, Optional[Dict[str, Any]]],
+                    task: Dict[str, Any]) -> None:
+        enabled, registry = shared
+        if not enabled or registry is None:
+            return
+        if task.get("status") == "active":
+            registry["claims"][task["id"]] = self._claim_for(task)
+        else:
+            registry["claims"].pop(task["id"], None)
+        self._save_registry(registry)
+
+    def _claim_drift(self, task: Dict[str, Any], claim: Optional[Dict[str, Any]]) -> Optional[str]:
+        if not claim:
+            return "shared claim missing"
+        if claim.get("worktree_id") != self._worktree_id():
+            return "claimed by %s" % claim.get("worktree_id")
+        if claim.get("write_scopes") != sorted(task.get("write_scopes", [])):
+            return "write scopes differ from the shared claim"
+        if parse_time(claim.get("lease_expires_at")) != parse_time(task.get("lease_expires_at")):
+            return "lease differs from the shared claim"
+        return None
+
+    def worktree_status(self) -> Dict[str, Any]:
+        config = self.require_initialized()
+        mode = config.get("coordination", {}).get("mode", "local")
+        result: Dict[str, Any] = {
+            "mode": mode,
+            "coverage": "Opt-in Git worktrees on this machine that share the same common Git directory",
+            "worktree_id": self._worktree_id(),
+            "registered_worktrees": 0,
+            "active_claims": [],
+        }
+        if mode == "git-common-dir":
+            registry = self._read_registry()
+            if self._worktree_id() not in registry["members"]:
+                raise RelayError(
+                    "This worktree is not registered for this project's coordination; "
+                    "preview worktree enable in the worktree where Relay is installed"
+                )
+            result["registered_worktrees"] = len(registry["members"])
+            result["active_claims"] = [
+                dict(task_id=task_id, **claim)
+                for task_id, claim in sorted(registry["claims"].items())
+                if parse_time(claim["lease_expires_at"]) > utc_now()
+            ]
+        return result
+
+    def configure_worktree(self, enabled: bool, dry_run: bool, confirmed: bool) -> Dict[str, Any]:
+        config = self.require_initialized(writable=not dry_run)
+        plan = {
+            "dry_run": dry_run,
+            "mode": "git-common-dir" if enabled else "local",
+            "shared_git_directory": str(self._common_git_dir()),
+            "shared_registry": str(self._shared_registry_path()),
+            "shared_lock": str(self._shared_registry_lock_path()),
+            "project_writes": ["%s/config.json" % STATE_DIR_NAME,
+                               "%s/HANDOFF.md" % STATE_DIR_NAME,
+                               "%s/events/" % STATE_DIR_NAME,
+                               "%s/backups/" % STATE_DIR_NAME],
+            "warning": "Shared Git metadata may live outside this worktree; every worktree must opt in separately.",
+        }
+        already_enabled = self._coordination_enabled(config)
+        # A missing registry is missing even for an already-enabled project, and
+        # a corrupted one must never be replaced implicitly.
+        self._read_registry(allow_missing=not already_enabled)
+        if dry_run:
+            if already_enabled:
+                self._read_registry()
+            return plan
+        if not confirmed:
+            raise RelayError("Worktree settings require --yes after reviewing --dry-run")
+        with StateLock(self._shared_registry_lock_path()), StateLock(self.lock_path):
+            config = self.require_initialized(writable=True)
+            # Re-read the configuration under the shared lock: a concurrent opt-in
+            # from the same worktree may have finished after the upfront check.
+            already_enabled = self._coordination_enabled(config)
+            # Never discard another worktree's membership or leases just because
+            # this worktree's own configuration still says "local".
+            registry = self._read_registry(allow_missing=True)
+            if registry is None:
+                raise RelayError("Worktree coordination is not enabled")
+            active = [task for task in self._load_tasks()
+                      if task.get("status") == "active" and not self._is_expired(task)]
+            if registry.get("project_id") is None:
+                registry["project_id"] = config.get("project_id")
+            if enabled:
+                self._shared_conflicts(registry, [scope for task in active
+                                                  for scope in task.get("write_scopes", [])])
+                registry["members"][self._worktree_id()] = {
+                    "worktree_id": self._worktree_id(),
+                    "root": str(self.root),
+                    "runtime_version": VERSION,
+                }
+                for task in active:
+                    registry["claims"][task["id"]] = self._claim_for(task)
+            else:
+                if any(claim["worktree_id"] == self._worktree_id()
+                       for claim in registry["claims"].values()):
+                    raise RelayError("Finish active tasks before disabling worktree coordination")
+                registry["claims"] = {key: claim for key, claim in registry["claims"].items()
+                                      if claim["worktree_id"] != self._worktree_id()}
+                registry["members"].pop(self._worktree_id(), None)
+            served = [claim for claim in registry["claims"].values()
+                      if claim["worktree_id"] == self._worktree_id()]
+            if not enabled and not served:
+                if already_enabled and not registry["members"] and not registry["claims"]:
+                    with contextlib.suppress(FileNotFoundError):
+                        self._shared_registry_path().unlink()
+                # Remove unused project-local registry files from earlier builds;
+                # Git already drops worktree-private copies at cleanup.
+                leftovers = self.state / "integrations" / "worktree-coordination"
+                if leftovers.is_dir() and not any(leftovers.iterdir()):
+                    with contextlib.suppress(OSError):
+                        leftovers.rmdir()
+            stamp = utc_now().strftime("%Y%m%dT%H%M%S%fZ")
+            self._backup(self.config_path, stamp)
+            if enabled or served:
+                self._save_registry(registry)
+            config["coordination"] = {"mode": plan["mode"]}
+            self._save_config(config)
+            event = self._write_event_unlocked("worktree-configured", {
+                "summary": "Worktree coordination %s" % ("enabled" if enabled else "disabled"),
+                "mode": plan["mode"],
+                "registered_worktrees": len(registry["members"]),
+            })
+            self._refresh_handoff_unlocked(event["id"])
+        return plan
+
+    def configure_hooks(self, enabled: bool, dry_run: bool, confirmed: bool) -> Dict[str, Any]:
+        self.require_initialized(writable=not dry_run)
+        result = {
+            "dry_run": dry_run,
+            "hooks_enabled": enabled,
+            "writes": ["%s/config.json" % STATE_DIR_NAME,
+                       "%s/HANDOFF.md" % STATE_DIR_NAME,
+                       "%s/events/" % STATE_DIR_NAME,
+                       "%s/backups/" % STATE_DIR_NAME],
+            "harness_configuration_changed": False,
+        }
+        if dry_run:
+            return result
+        if not confirmed:
+            raise RelayError("Hook settings require --yes after reviewing --dry-run")
+        with StateLock(self.lock_path):
+            config = self.require_initialized(writable=True)
+            self._backup(self.config_path, utc_now().strftime("%Y%m%dT%H%M%S%fZ"))
+            config["hooks"] = {"enabled": enabled}
+            self._save_config(config)
+            event = self._write_event_unlocked("hooks-configured", {
+                "summary": "Optional lifecycle hooks %s" % ("enabled" if enabled else "disabled"),
+            })
+            self._refresh_handoff_unlocked(event["id"])
+        return result
+
+    def hook(self, event: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+        config = self.require_initialized()
+        if not config.get("hooks", {}).get("enabled"):
+            return {"enabled": False, "ignored": True}
+        if event in ("session-start", "session-end"):
+            return {"enabled": True, "report": self.report_data()}
+        required = {
+            "before-write": ("title",),
+            "checkpoint": ("task_id", "summary"),
+            "task-finish": ("task_id", "result", "status"),
+        }
+        allowed = {
+            "before-write": {"title", "owner", "scopes", "harness", "model",
+                             "capabilities", "lease_minutes", "goal"},
+            "checkpoint": {"task_id", "summary", "changed", "verification", "blockers",
+                           "next_step", "lease_minutes"},
+            "task-finish": {"task_id", "result", "status", "changed", "verification",
+                            "blockers", "next_step"},
+        }
+        if event not in allowed or not isinstance(payload, dict):
+            raise RelayError("Invalid lifecycle hook event or payload")
+        unknown = sorted(set(payload) - allowed[event])
+        missing = [key for key in required[event] if key not in payload]
+        if unknown or missing:
+            raise RelayError("Hook payload has unknown fields %s or is missing %s" % (unknown, missing))
+        list_fields = {"scopes", "capabilities", "changed", "verification", "blockers"}
+        for key, value in payload.items():
+            if key in list_fields:
+                if (not isinstance(value, list) or len(value) > 128
+                        or any(not isinstance(item, str) or not item.strip() or len(item) > 4096
+                               for item in value)):
+                    raise RelayError("Hook field %s must be a bounded string list" % key)
+            elif key == "lease_minutes":
+                if type(value) is not int or not 5 <= value <= 1440:
+                    raise RelayError("Hook lease_minutes must be an integer from 5 to 1440")
+            elif not isinstance(value, str) or not value.strip() or len(value) > 4096:
+                raise RelayError("Hook field %s must be a nonempty bounded string" % key)
+        if event == "before-write":
+            return self.start_task(
+                payload["title"], payload.get("owner"), payload.get("scopes", []),
+                payload.get("lease_minutes"), payload.get("harness"), payload.get("model"),
+                payload.get("capabilities", []), payload.get("goal"),
+            )
+        status = payload.get("status")
+        if event == "task-finish" and status not in ("completed", "blocked", "cancelled"):
+            raise RelayError("task-finish status must be completed, blocked, or cancelled")
+        return self.update_task(
+            "checkpoint" if event == "checkpoint" else "finish",
+            payload["task_id"],
+            payload["summary"] if event == "checkpoint" else payload["result"],
+            payload.get("changed", []), payload.get("verification", []),
+            payload.get("blockers", []), payload.get("next_step"), status,
+            payload.get("lease_minutes"),
+        )
 
     def _adapter_specs(self, mode: str) -> List[Tuple[str, str, str, str]]:
         specs = [
@@ -589,8 +983,10 @@ class Relay:
         previous = load_json(no_symlink_member(self.root, ".agent-relay/config.json"), {})
         if not isinstance(previous, dict):
             raise RelayError("Existing config.json is not an object")
-        if previous and previous.get("schema_version") != SCHEMA_VERSION:
+        if previous and previous.get("schema_version") not in READABLE_SCHEMAS:
             raise RelayError("Unsupported config schema; refusing to downgrade state")
+        if previous and previous.get("installed") is not False:
+            self.require_initialized()
         if not isinstance(previous.get("managed_files", {}), dict):
             raise RelayError("config managed_files must be an object")
         if any(not isinstance(record, dict)
@@ -648,6 +1044,11 @@ class Relay:
             "project_root": str(self.root),
             "runtime_version": VERSION,
             "runtime_sha256": source_hash,
+            "migration": (
+                {"from": previous["schema_version"], "to": SCHEMA_VERSION,
+                 "preserves": ["goals", "tasks", "events", "versions", "environments"]}
+                if previous and previous["schema_version"] != SCHEMA_VERSION else None
+            ),
             "adapter_mode": adapters,
             "operations": operations,
             "writes": sum(1 for item in operations if item["action"] in ("create", "modify")),
@@ -656,11 +1057,20 @@ class Relay:
     def _backup(self, path: Path, stamp: str) -> Optional[str]:
         if not path.exists() or path.is_symlink():
             return None
-        relative = relative_path(self.root, path)
+        resolved = path.resolve()
+        try:
+            relative = resolved.relative_to(self.root).as_posix()
+        except ValueError:
+            # Only state-owned files may live outside the project root.
+            resolved.relative_to(self.state.resolve())
+            relative = "_state/" + resolved.relative_to(self.state.resolve()).as_posix()
         backup = self.state / "backups" / stamp / relative
         backup.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(str(path), str(backup))
-        return relative_path(self.root, backup)
+        try:
+            return backup.relative_to(self.root).as_posix()
+        except ValueError:
+            return str(backup)
 
     def _write_adapter(
         self,
@@ -713,6 +1123,8 @@ class Relay:
             "adapters": existing.get("adapters", []),
             "managed_files": existing.get("managed_files", {}),
             "current_environment": existing.get("current_environment"),
+            "hooks": existing.get("hooks", {"enabled": False}),
+            "coordination": existing.get("coordination", {"mode": "local"}),
             "policy": {
                 "lease_minutes": int(existing.get("policy", {}).get("lease_minutes", 120)),
                 "record_hidden_reasoning": False,
@@ -760,6 +1172,7 @@ class Relay:
                 raise RelayError("Existing config.json is not an object")
             config = self._base_config(previous)
             first_install = not bool(previous)
+            migrating = bool(previous) and previous.get("schema_version") != SCHEMA_VERSION
             stamp = utc_now().strftime("%Y%m%dT%H%M%S%fZ")
             managed = dict(config.get("managed_files", {}))
             installed_adapters = {item.get("path"): item for item in config.get("adapters", []) if item.get("path")}
@@ -776,6 +1189,13 @@ class Relay:
             if previous:
                 self._backup(self.config_path, stamp)
                 self._backup(self.handoff_path, stamp)
+            if migrating:
+                config["hooks"] = {"enabled": False}
+                config["coordination"] = {"mode": "local"}
+                config["migrations"] = list(config.get("migrations", [])) + [{
+                    "from": previous["schema_version"], "to": SCHEMA_VERSION,
+                    "at": iso_now(), "backup": ".agent-relay/backups/%s" % stamp,
+                }]
             if runtime_plan["action"] == "modify":
                 runtime_backup = self._backup(self.runtime_path, stamp)
                 atomic_write(self.runtime_path, source, 0o755)
@@ -790,11 +1210,13 @@ class Relay:
             elif runtime_plan["action"] == "create":
                 atomic_write(self.runtime_path, source, 0o755)
                 actions.append({"path": "%s/relay.py" % STATE_DIR_NAME, "action": "written"})
+            goals_state = self._goals()
             if not self.goals_path.exists():
-                atomic_write(
-                    self.goals_path,
-                    json_text({"schema_version": SCHEMA_VERSION, "goals": [], "updated_at": iso_now()}),
-                )
+                atomic_write(self.goals_path, json_text(sanitize(goals_state)))
+            elif goals_state.get("schema_version") != SCHEMA_VERSION:
+                goals_state["schema_version"] = SCHEMA_VERSION
+                goals_state["updated_at"] = iso_now()
+                atomic_write(self.goals_path, json_text(sanitize(goals_state)))
             workbuddy_guide = self.state / "integrations" / "workbuddy" / "README.md"
             if not workbuddy_guide.exists():
                 atomic_write(workbuddy_guide, WORKBUDDY_GUIDE.rstrip() + "\n")
@@ -826,11 +1248,12 @@ class Relay:
             if goal:
                 self._add_goal_unlocked(goal, "explicit", "long-term", create_event=False)
             event = self._write_event_unlocked(
-                "initialized" if first_install else "reinitialized",
+                "initialized" if first_install else ("schema-migrated" if migrating else "reinitialized"),
                 {
                     "summary": "Installed Agent Relay project capability" if first_install else "Refreshed Agent Relay project capability",
                     "adapter_mode": adapters,
                     "environment_id": env_id,
+                    "migration": plan.get("migration"),
                     "actions": actions,
                     "next_step": "Review .agent-relay/HANDOFF.md, then start the first task",
                 },
@@ -840,6 +1263,8 @@ class Relay:
                 "dry_run": False,
                 "project_root": str(self.root),
                 "runtime_version": VERSION,
+                "schema_version": SCHEMA_VERSION,
+                "migration": plan.get("migration"),
                 "event_id": event["id"],
                 "environment_id": env_id,
                 "actions": actions,
@@ -910,9 +1335,16 @@ class Relay:
             utc_now().strftime("%Y%m%dT%H%M%S%fZ"),
             uuid.uuid4().hex[:8],
         )
+        # Events carry the schema of the state they were written against, so a
+        # read-only visit from a newer runtime must not rewrite record formats.
+        state_schema = SCHEMA_VERSION
+        existing = load_json(self.config_path, {})
+        if isinstance(existing, dict) and isinstance(existing.get("schema_version"), int):
+            if existing["schema_version"] in READABLE_SCHEMAS:
+                state_schema = existing["schema_version"]
         payload = sanitize(
             {
-                "schema_version": SCHEMA_VERSION,
+                "schema_version": state_schema,
                 "id": event_id,
                 "type": event_type,
                 "created_at": now,
@@ -955,6 +1387,9 @@ class Relay:
         )
         if not isinstance(value, dict) or not isinstance(value.get("goals", []), list):
             raise RelayError("Invalid goals.json")
+        state_schema = value.get("schema_version")
+        if state_schema not in READABLE_SCHEMAS:
+            raise RelayError("Unsupported goals.json schema")
         return value
 
     @staticmethod
@@ -1027,7 +1462,7 @@ class Relay:
         return goal
 
     def add_goal(self, text: str, kind: str, scope: str) -> Dict[str, Any]:
-        self.require_initialized()
+        self.require_initialized(writable=True)
         with StateLock(self.lock_path):
             goal = self._add_goal_unlocked(text, kind, scope)
             events = self._load_events()
@@ -1035,7 +1470,7 @@ class Relay:
             return goal
 
     def complete_goal(self, goal_id: str, status: str) -> Dict[str, Any]:
-        self.require_initialized()
+        self.require_initialized(writable=True)
         with StateLock(self.lock_path):
             data = self._goals()
             goal = next((item for item in data["goals"] if item.get("id") == goal_id), None)
@@ -1059,7 +1494,7 @@ class Relay:
     def _task_path(self, task_id: str) -> Path:
         if not re.fullmatch(r"task-[a-z0-9-]+", task_id):
             raise RelayError("Invalid task ID: %s" % task_id)
-        return self.tasks_dir / (task_id + ".json")
+        return no_symlink_member(self.root, ".agent-relay/tasks/%s.json" % task_id)
 
     def _is_expired(self, task: Dict[str, Any]) -> bool:
         expiry = parse_time(task.get("lease_expires_at"))
@@ -1089,12 +1524,13 @@ class Relay:
         capabilities: Sequence[str],
         goal: Optional[str],
     ) -> Dict[str, Any]:
-        config = self.require_initialized()
+        initial = self.require_initialized(writable=True)
+        mode = initial.get("coordination", {}).get("mode")
         clean_title = redact_string(title).strip()
         if not clean_title:
             raise RelayError("Task title cannot be empty")
         normalized = sorted(set(normalize_scope(self.root, item) for item in scopes))
-        lease = int(lease_minutes or config.get("policy", {}).get("lease_minutes", 120))
+        lease = int(lease_minutes or initial.get("policy", {}).get("lease_minutes", 120))
         if lease < 5 or lease > 1440:
             raise RelayError("Lease must be between 5 and 1440 minutes")
         detected_harness = self._detect_harness(harness)
@@ -1102,7 +1538,10 @@ class Relay:
         default_owner = detected_harness + (":" + session[:12] if session else "")
         clean_owner = redact_string(owner or default_owner)[:160]
 
-        with StateLock(self.lock_path):
+        with self._task_lock(initial, mode) as shared:
+            config = self.require_initialized(writable=True)
+            if shared[1] is not None:
+                self._shared_conflicts(shared[1], normalized)
             tasks = self._load_tasks()
             expired = []
             conflicts = []
@@ -1172,6 +1611,9 @@ class Relay:
                     "next_step": "Execute and verify the current user request",
                 }
             )
+            # Publish a shared claim first. An interrupted start can only leave
+            # a conservative reservation until expiry, never an unclaimed task.
+            self._save_claim(shared, task)
             atomic_write(self._task_path(task_id), json_text(task))
             event = self._write_event_unlocked(
                 "task-started",
@@ -1200,13 +1642,18 @@ class Relay:
         status: Optional[str],
         lease_minutes: Optional[int],
     ) -> Dict[str, Any]:
-        config = self.require_initialized()
-        with StateLock(self.lock_path):
+        initial = self.require_initialized(writable=True)
+        with self._task_lock(initial) as shared:
+            config = self.require_initialized(writable=True)
             path, task = self._resolve_task(task_id)
             if task.get("status") != "active":
                 raise RelayError("Cannot update task in status %s" % task.get("status"))
             if self._is_expired(task):
                 raise RelayError("Task lease expired; start a new task or record an audited takeover")
+            if shared[1] is not None:
+                drift = self._claim_drift(task, shared[1]["claims"].get(task["id"]))
+                if drift:
+                    raise RelayError("Shared claim check failed: %s" % drift)
             clean_changed = sorted(
                 set(normalize_scope(self.root, item) for item in changed)
             )
@@ -1234,7 +1681,16 @@ class Relay:
                 task["status"] = status or "completed"
                 task["lease_expires_at"] = None
                 event_type = "task-finished"
+            if command == "checkpoint":
+                # Renew the shared lease first; a crash then over-reserves
+                # rather than letting another worktree race our write.
+                self._save_claim(shared, task)
             atomic_write(path, json_text(sanitize(task)))
+            if command != "checkpoint":
+                # Finish releases the local lease before the shared claim.
+                # An interrupted release leaves a conservative reservation
+                # that expires with the lease it copied.
+                self._save_claim(shared, task)
             event = self._write_event_unlocked(
                 event_type,
                 {
@@ -1443,7 +1899,7 @@ class Relay:
     def report_data(self) -> Dict[str, Any]:
         if not self.config_path.exists():
             return {
-                "schema_version": SCHEMA_VERSION,
+                "schema_version": REPORT_SCHEMA_VERSION,
                 "health": "uninitialized",
                 "project": self.root.name,
                 "project_goal": "Not recorded",
@@ -1467,7 +1923,7 @@ class Relay:
             versions = self._load_versions()
         except RelayError as exc:
             return {
-                "schema_version": SCHEMA_VERSION,
+                "schema_version": REPORT_SCHEMA_VERSION,
                 "health": "degraded",
                 "project": self.root.name,
                 "project_goal": "Unknown",
@@ -1557,6 +2013,11 @@ class Relay:
         for task in active + blocked:
             blockers.extend(task.get("blockers", []))
         blockers.extend(stale)
+        coordination = None
+        try:
+            coordination = self.worktree_status()
+        except (OSError, RelayError) as exc:
+            issues.append("coordination: %s" % exc)
         health = "degraded" if issues else ("stale" if stale else "healthy")
         next_step = next((task.get("next_step") for task in active if task.get("next_step")), None)
         if not next_step and latest_event:
@@ -1564,7 +2025,11 @@ class Relay:
         caveats = finished[-1].get("blockers", []) if finished else []
         return sanitize(
             {
-                "schema_version": SCHEMA_VERSION,
+                "schema_version": REPORT_SCHEMA_VERSION,
+                "state_schema_version": config["schema_version"],
+                "migration_required": config["schema_version"] != SCHEMA_VERSION,
+                "coordination": coordination,
+                "hooks_enabled": config.get("hooks", {}).get("enabled", False),
                 "health": health,
                 "runtime_version": config.get("runtime_version"),
                 "project": self.root.name,
@@ -1742,7 +2207,7 @@ class Relay:
         confirmed: bool,
         max_bytes: int,
     ) -> Dict[str, Any]:
-        self.require_initialized()
+        self.require_initialized(writable=not dry_run)
         if max_bytes <= 0:
             raise RelayError("--max-bytes must be greater than zero")
         files, total = self._collect_artifacts(artifacts, max_bytes)
@@ -1848,10 +2313,17 @@ class Relay:
             if not isinstance(config, dict):
                 add("schema", "fail", "config.json must contain an object")
                 return {"health": "degraded", "runtime_version": VERSION, "checks": checks}
-            if config.get("schema_version") != SCHEMA_VERSION:
+            if config.get("schema_version") not in READABLE_SCHEMAS:
                 add("schema", "fail", "Unsupported config schema")
             elif config.get("installed") is False:
                 add("initialization", "fail", "Project capability is uninstalled")
+            elif config.get("schema_version") != SCHEMA_VERSION:
+                add(
+                    "schema",
+                    "warn",
+                    "schema %s is readable; run migrate --dry-run before writing with this runtime"
+                    % config.get("schema_version"),
+                )
             else:
                 add("schema", "pass", "schema %s" % SCHEMA_VERSION)
         except RelayError as exc:
@@ -1903,6 +2375,25 @@ class Relay:
             versions = []
 
         expired_active = [task for task in tasks if self._is_expired(task)]
+        if isinstance(config, dict) and self._coordination_enabled(config):
+            try:
+                coordination = self.worktree_status()
+                claims = {claim["task_id"]: claim for claim in coordination["active_claims"]}
+                for task in tasks:
+                    if task.get("status") == "active" and not self._is_expired(task):
+                        drift = self._claim_drift(task, claims.get(task["id"]))
+                        if drift:
+                            raise RelayError("task %s: %s" % (task["id"], drift))
+                add(
+                    "coordination",
+                    "pass",
+                    "shared common Git directory; %d worktree(s) registered"
+                    % coordination.get("registered_worktrees", 0),
+                )
+            except (OSError, RelayError) as exc:
+                add("coordination", "fail", str(exc))
+        else:
+            add("coordination", "pass", "local only; worktree coordination is not enabled")
         add(
             "lease-freshness",
             "warn" if expired_active else "pass",
@@ -2053,10 +2544,23 @@ class Relay:
 
     def uninstall(self, dry_run: bool, confirmed: bool) -> Dict[str, Any]:
         plan = self.uninstall_plan()
+        config = load_json(self.config_path, {})
+        coordinated = (isinstance(config, dict)
+                       and self._coordination_enabled(config))
+        if coordinated:
+            plan["coordination"] = self.configure_worktree(False, True, False)
         if dry_run:
             return {"dry_run": True, **plan}
         if not confirmed:
             raise RelayError("Uninstall requires --yes after reviewing uninstall --dry-run")
+        if coordinated:
+            try:
+                self.configure_worktree(False, False, True)
+            except (RelayError, OSError) as exc:
+                # Leaked shared claims would block other worktrees indefinitely.
+                raise RelayError(
+                    "Cannot uninstall while worktree coordination is active: %s" % exc
+                )
         with StateLock(self.lock_path):
             config = load_json(self.config_path)
             if not isinstance(config, dict):
@@ -2175,6 +2679,28 @@ def build_parser() -> argparse.ArgumentParser:
     init.add_argument("--harness", help="Current agent harness name")
     init.add_argument("--model", help="Current model name")
     init.add_argument("--capability", action="append", default=[], help="Safe capability name; repeatable")
+
+    migrate = commands.add_parser("migrate", help="Preview or apply a backed-up schema/runtime upgrade")
+    add_common(migrate)
+    migrate.add_argument("--dry-run", action="store_true")
+    migrate.add_argument("--yes", action="store_true")
+
+    for name, help_text in (
+        ("hooks", "Opt in to project-local lifecycle hooks; no harness configuration is changed"),
+        ("worktree", "Opt in to shared leases in this repository's common Git directory"),
+    ):
+        settings = commands.add_parser(name, help=help_text)
+        choices = settings.add_subparsers(dest="setting", required=True)
+        for setting in ("status", "enable", "disable"):
+            choice = choices.add_parser(setting)
+            add_common(choice)
+            if setting != "status":
+                choice.add_argument("--dry-run", action="store_true")
+                choice.add_argument("--yes", action="store_true")
+
+    hook = commands.add_parser("hook", help="Run an opt-in lifecycle event; writes take bounded JSON on stdin")
+    add_common(hook)
+    hook.add_argument("event", choices=("session-start", "before-write", "checkpoint", "task-finish", "session-end"))
 
     start = commands.add_parser("start", help="Create a task lease and claim write scopes")
     add_common(start)
@@ -2300,6 +2826,31 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 print("Agent Relay %s initialized in %s" % (VERSION, root))
                 print("Event: %s" % result["event_id"])
                 print("Next: %s" % result["doctor_command"])
+        elif command == "migrate":
+            output_result(relay.migrate(args.dry_run, args.yes), args.json)
+        elif command == "worktree":
+            result = (relay.worktree_status() if args.setting == "status" else
+                      relay.configure_worktree(args.setting == "enable", args.dry_run, args.yes))
+            output_result(result, args.json)
+        elif command == "hooks":
+            result = (relay.require_initialized().get("hooks", {"enabled": False})
+                      if args.setting == "status" else
+                      relay.configure_hooks(args.setting == "enable", args.dry_run, args.yes))
+            output_result(result, args.json)
+        elif command == "hook":
+            config = relay.require_initialized()
+            payload = {}
+            if config.get("hooks", {}).get("enabled") and args.event not in ("session-start", "session-end"):
+                if sys.stdin.isatty():
+                    raise RelayError("Supply a bounded operational JSON object on stdin")
+                raw = sys.stdin.buffer.read(HOOK_MAX_BYTES + 1)
+                if len(raw) > HOOK_MAX_BYTES:
+                    raise RelayError("Hook input exceeds 64 KiB")
+                try:
+                    payload = json.loads(raw)
+                except (json.JSONDecodeError, UnicodeDecodeError):
+                    raise RelayError("Hook input must be a valid JSON object")
+            output_result(relay.hook(args.event, payload), True)
         elif command == "start":
             result = relay.start_task(
                 args.title,
@@ -2373,8 +2924,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             result = relay.purge(args.yes, args.confirm)
             output_result(result, args.json)
         return 0
-    except RelayError as exc:
-        print("Agent Relay error: %s" % exc, file=sys.stderr)
+    except (RelayError, OSError) as exc:
+        print("Agent Relay error: %s" % redact_string(str(exc)), file=sys.stderr)
         return 1
     except KeyboardInterrupt:
         print("Agent Relay interrupted", file=sys.stderr)

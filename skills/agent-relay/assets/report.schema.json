@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/chopperH0824/agent-relay/blob/v0.1.1/skills/agent-relay/assets/report.schema.json",
+  "$id": "https://github.com/chopperH0824/agent-relay/blob/v0.2.0/skills/agent-relay/assets/report.schema.json",
   "title": "Agent Relay report v1",
   "type": "object",
   "required": [
@@ -230,6 +230,74 @@
       "type": "array",
       "items": {
         "type": "object"
+      }
+    },
+    "state_schema_version": {
+      "type": "integer"
+    },
+    "migration_required": {
+      "type": "boolean"
+    },
+    "hooks_enabled": {
+      "type": "boolean"
+    },
+    "coordination": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "mode": {
+          "enum": [
+            "local",
+            "git-common-dir"
+          ]
+        },
+        "coverage": {
+          "type": "string"
+        },
+        "worktree_id": {
+          "type": "string"
+        },
+        "registered_worktrees": {
+          "type": "integer"
+        },
+        "active_claims": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "task_id",
+              "worktree_id",
+              "owner",
+              "write_scopes",
+              "lease_expires_at"
+            ],
+            "properties": {
+              "task_id": {
+                "type": "string"
+              },
+              "worktree_id": {
+                "type": "string"
+              },
+              "owner": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "write_scopes": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "lease_expires_at": {
+                "type": "string"
+              }
+            }
+          }
+        }
       }
     }
   },
