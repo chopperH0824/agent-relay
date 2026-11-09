@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/chopperH0824/agent-relay/blob/v0.1.0/skills/agent-relay/assets/report.schema.json",
+  "$id": "https://github.com/chopperH0824/agent-relay/blob/v0.1.1/skills/agent-relay/assets/report.schema.json",
   "title": "Agent Relay report v1",
   "type": "object",
   "required": [
@@ -24,6 +24,12 @@
         "degraded",
         "stale",
         "uninitialized"
+      ]
+    },
+    "runtime_version": {
+      "type": [
+        "string",
+        "null"
       ]
     },
     "project": {
@@ -84,6 +90,24 @@
         "null"
       ]
     },
+    "blocked_work": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "last_blocked": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "completion_caveats": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
     "version_state": {
       "type": "object",
       "required": [
@@ -107,6 +131,64 @@
         "storage_bytes": {
           "type": "integer",
           "minimum": 0
+        },
+        "drift_basis": {
+          "enum": [
+            "git",
+            "artifact-manifest",
+            "unknown"
+          ]
+        },
+        "artifact_drift": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "properties": {
+            "changed": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "missing": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "unsafe": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "unknown": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "scanned_bytes": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "status": {
+              "enum": [
+                "complete",
+                "unknown"
+              ]
+            }
+          },
+          "required": [
+            "changed",
+            "missing",
+            "unsafe",
+            "unknown",
+            "scanned_bytes",
+            "status"
+          ],
+          "additionalProperties": false
         }
       },
       "additionalProperties": false

@@ -33,7 +33,7 @@ The current user request always outranks goals and historical next steps.
 
 Shared operational records use JSON Schema version `1`. Runtime writes use a same-directory temporary file, `fsync`, and atomic rename.
 
-- `config.json`: runtime/schema version, project UUID, adapter inventory, managed path metadata, current environment ID, and safety policy.
+- `config.json`: runtime/schema version, installed runtime SHA-256, project UUID, adapter inventory, managed path metadata, current environment ID, and safety policy.
 - `goals.json`: explicit or candidate goals with long-term/short-term scope and lifecycle status.
 - `tasks/<id>.json`: owner, status, lease expiration, write scopes, result, changed paths, verification, blockers, and next step.
 - `events/<id>.json`: one immutable operational event per file.
@@ -58,6 +58,31 @@ Shared operational records use JSON Schema version `1`. Runtime writes use a sam
 | `purge` | Destructive | Requires `--yes --confirm <project-name>` |
 
 `report --json` is the stable integration surface for hooks, scripts, MCP tools, and nonstandard harness bridges. Its v1 contract is bundled at [`assets/report.schema.json`](../assets/report.schema.json).
+
+### Status semantics
+
+- `project_goal` selects the most recently updated active **explicit** goal, with insertion order breaking timestamp ties. `goals` also lists candidates, labeled by kind. Candidates alone do not become the project goal.
+- `last_completed` includes only `task-finished` events with `status=completed`. Missing status is unknown, not inferred as completion.
+- `blocked_work` lists tasks whose recorded status is blocked; `last_blocked` is historical context. A later unrelated completion does not resolve them.
+- `completion_caveats` contains blockers recorded on the last completed event. These are carried-forward observations, not a live issue tracker.
+- `doctor` warns on expired active leases and runtime ownership mismatches. Its `warning` result exits `0`; failures exit `1`. `report` uses `stale` for expired leases or an old handoff.
+- Relay health does not establish product acceptance, deployment, approval, or external-service state.
+
+### Drift coverage
+
+`version_state.drift_basis` labels `unsealed_changes`: `git` counts porcelain working-tree entries, `artifact-manifest` counts changed/missing paths in the latest seal, and `unknown` has no comparison baseline. Git cleanliness is not a comparison against the sealed Git commit.
+
+`artifact_drift` is available for Git and non-Git projects when the latest seal has selected artifacts. It lists `changed`, `missing`, `unsafe`, and `unknown` paths; `status=complete` means the comparison finished, not that files are unchanged. Reads are limited to 100 MiB and 10,000 manifest entries per report. Unreadable, oversized, non-regular, symlink, or unsafe paths are never silently reported unchanged. For a non-Git incomplete comparison, `unsealed_changes` is `"unknown"`.
+
+Only the latest manifest's files are compared; newly added or unselected files are outside coverage. Sealed-copy integrity remains the separate `doctor` check.
+
+### Upgrades and fleet audits
+
+Run the new installer against an explicitly selected existing project using its existing adapter mode. Preview and confirm `init` as usual. The runtime must match its recorded SHA-256 or one of the known pre-checksum v0.1.0 revisions. Unknown local edits cause a conflict; no force-replace flag is provided.
+
+Refreshes back up the previous runtime, config, handoff, and modified adapters under a unique timestamp. Owned bridges update only when their recorded hash matches; local changes are preserved. Goals, tasks, events, and versions are not migrated or rewritten, though the refresh adds its own event and regenerates the handoff.
+
+`scripts/fleet_report.py` reads approved `--project` paths and/or each `--root` plus immediate children using the trusted installer code. It never executes project-local Python, initializes projects, or writes results. Missing explicit projects and invalid state remain visible. `runtime_version` comes from installed metadata; doctor results use the current reader. The scan is sequential and a full doctor may read all sealed copies. Exit `0` means the audit completed, not that every row is healthy.
 
 ## Report health
 

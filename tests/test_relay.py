@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import json
 import os
 import subprocess
@@ -9,11 +10,16 @@ import tempfile
 import unittest
 from pathlib import Path
 from typing import Any, Dict, Optional
+from unittest import mock
 
 
 REPO = Path(__file__).resolve().parents[1]
 SOURCE_RUNTIME = REPO / "skills" / "agent-relay" / "scripts" / "relay.py"
 SKILL = REPO / "skills" / "agent-relay" / "SKILL.md"
+FLEET = SOURCE_RUNTIME.with_name("fleet_report.py")
+spec = importlib.util.spec_from_file_location("relay_under_test", SOURCE_RUNTIME)
+relay_module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(relay_module)
 
 
 class RelayTestCase(unittest.TestCase):
@@ -452,6 +458,273 @@ class RelayTestCase(unittest.TestCase):
         )
         self.assertFalse((self.root / ".agent-relay").exists())
         self.assertTrue(agents.exists())
+
+    def test_blocked_and_cancelled_are_not_completed(self) -> None:
+        self.init()
+        completed = self.json_output("start", "--title", "Implement")
+        self.json_output(
+            "finish", "--task-id", completed["id"], "--result", "Implementation finished",
+            "--blocker", "External acceptance not verified",
+        )
+        blocked = self.json_output("start", "--title", "Review")
+        self.json_output(
+            "finish", "--task-id", blocked["id"], "--result", "Review waiting",
+            "--status", "blocked", "--blocker", "Awaiting approval",
+        )
+        cancelled = self.json_output("start", "--title", "Discard")
+        self.json_output(
+            "finish", "--task-id", cancelled["id"], "--result", "Discarded",
+            "--status", "cancelled",
+        )
+        before = self.state_hash()
+        report = self.json_output("report")
+        self.assertEqual(report["last_completed"]["task_id"], completed["id"])
+        self.assertEqual(report["last_blocked"]["task_id"], blocked["id"])
+        self.assertEqual([task["id"] for task in report["blocked_work"]], [blocked["id"]])
+        self.assertIn("Awaiting approval", report["blockers"])
+        self.assertEqual(report["completion_caveats"], ["External acceptance not verified"])
+        handoff = (self.root / ".agent-relay/HANDOFF.md").read_text()
+        self.assertIn("Review", handoff)
+        self.assertIn("Awaiting approval", handoff)
+        self.assertIn("External acceptance not verified", handoff)
+        self.assertNotIn("Discarded", handoff)
+        self.assertEqual(before, self.state_hash())
+
+    def test_only_blocked_work_has_no_last_completed(self) -> None:
+        self.init()
+        task = self.json_output("start", "--title", "Waiting")
+        self.json_output("finish", "--task-id", task["id"], "--status", "blocked",
+                         "--result", "Not finished")
+        self.assertIsNone(self.json_output("report")["last_completed"])
+
+    def test_goal_order_is_explicit_recent_and_stable(self) -> None:
+        self.init()
+        first = self.json_output("goal", "add", "Old explicit", "--kind", "explicit")
+        second = self.json_output("goal", "add", "New explicit", "--kind", "explicit")
+        candidate = self.json_output("goal", "add", "Possible direction", "--kind", "candidate")
+        path = self.root / ".agent-relay/goals.json"
+        data = json.loads(path.read_text())
+        for goal in data["goals"]:
+            goal["updated_at"] = "2026-01-01T00:00:00Z"
+        path.write_text(json.dumps(data))
+        report = self.json_output("report")
+        self.assertEqual(report["project_goal"], second["text"])
+        self.assertEqual([item["id"] for item in report["goals"]],
+                         [second["id"], first["id"], candidate["id"]])
+        data["goals"][0]["updated_at"] = "2026-01-02T00:00:00"
+        path.write_text(json.dumps(data))
+        self.assertEqual(self.json_output("report")["project_goal"], first["text"])
+        self.json_output("goal", "update", first["id"], "--status", "completed")
+        self.json_output("goal", "update", second["id"], "--status", "completed")
+        report = self.json_output("report")
+        self.assertEqual(report["project_goal"], "No explicit goal recorded")
+        self.assertEqual(report["goals"][0]["kind"], "candidate")
+        handoff = (self.root / ".agent-relay/HANDOFF.md").read_text()
+        self.assertLess(handoff.index("## Active goals"), handoff.index("## Active tasks"))
+
+    def test_expired_lease_warns_in_doctor_without_mutation(self) -> None:
+        self.init()
+        task = self.json_output("start", "--title", "Expired")
+        path = self.root / ".agent-relay/tasks" / (task["id"] + ".json")
+        task["lease_expires_at"] = "2000-01-01T00:00:00Z"
+        path.write_text(json.dumps(task))
+        before = self.state_hash()
+        report = self.json_output("report")
+        doctor = self.json_output("doctor")
+        self.assertEqual(report["health"], "stale")
+        self.assertEqual(doctor["health"], "warning")
+        self.assertEqual(next(item for item in doctor["checks"]
+                              if item["name"] == "lease-freshness")["status"], "warn")
+        self.assertEqual(before, self.state_hash())
+
+    def test_non_git_drift_tracks_only_latest_manifest(self) -> None:
+        self.init()
+        artifact = self.root / "output.txt"
+        artifact.write_text("approved")
+        self.json_output("seal", "--artifact", "output.txt", "--yes")
+        original = self.json_output("report")["version_state"]
+        self.assertEqual(original["drift_basis"], "artifact-manifest")
+        self.assertEqual(original["unsealed_changes"], 0)
+        (self.root / "unsealed-new-file.txt").write_text("not in the manifest")
+        self.assertEqual(self.json_output("report")["version_state"]["unsealed_changes"], 0)
+        artifact.write_text("revised")
+        before = self.state_hash()
+        changed = self.json_output("report")["version_state"]
+        self.assertEqual(changed["artifact_drift"]["changed"], ["output.txt"])
+        self.assertEqual(changed["unsealed_changes"], 1)
+        self.assertEqual(before, self.state_hash())
+        self.json_output("seal", "--artifact", "output.txt", "--yes")
+        self.assertEqual(self.json_output("report")["version_state"]["unsealed_changes"], 0)
+        artifact.unlink()
+        missing = self.json_output("report")["version_state"]
+        self.assertEqual(missing["artifact_drift"]["missing"], ["output.txt"])
+
+    def test_git_report_also_compares_sealed_artifacts(self) -> None:
+        self.init()
+        subprocess.run(["git", "init", str(self.root)], check=True, capture_output=True)
+        (self.root / "output.txt").write_text("sealed")
+        self.json_output("seal", "--artifact", "output.txt", "--yes")
+        (self.root / "output.txt").write_text("working")
+        version = self.json_output("report")["version_state"]
+        self.assertEqual(version["drift_basis"], "git")
+        self.assertEqual(version["artifact_drift"]["changed"], ["output.txt"])
+
+    def test_artifact_scan_bounds_and_io_errors_are_unknown(self) -> None:
+        self.init()
+        (self.root / "output.txt").write_text("sealed")
+        self.json_output("seal", "--artifact", "output.txt", "--yes")
+        relay = relay_module.Relay(self.root)
+        with mock.patch.object(relay_module, "REPORT_ARTIFACT_MAX_BYTES", 2):
+            version = relay.report_data()["version_state"]
+        self.assertEqual(version["unsealed_changes"], "unknown")
+        self.assertEqual(version["artifact_drift"]["unknown"], ["output.txt"])
+        with mock.patch.object(relay_module, "bounded_sha256", side_effect=PermissionError):
+            version = relay.report_data()["version_state"]
+        self.assertEqual(version["artifact_drift"]["status"], "unknown")
+        self.assertEqual(version["artifact_drift"]["scanned_bytes"], 0)
+
+    def test_artifact_scan_refuses_parent_symlinks_and_state_paths(self) -> None:
+        self.init()
+        directory = self.root / "outputs"
+        directory.mkdir()
+        (directory / "result.txt").write_text("sealed")
+        self.json_output("seal", "--artifact", "outputs/result.txt", "--yes")
+        directory.rename(self.root / "moved")
+        directory.symlink_to(self.root / "moved", target_is_directory=True)
+        version = self.json_output("report")["version_state"]
+        self.assertEqual(version["artifact_drift"]["unsafe"], ["outputs/result.txt"])
+        self.assertEqual(version["unsealed_changes"], "unknown")
+        relay = relay_module.Relay(self.root)
+        result = relay._artifact_drift({"artifacts": [
+            {"path": "../outside.txt", "sha256": "0" * 64},
+            {"path": ".agent-relay/config.json", "sha256": "0" * 64},
+            {"path": ".git/config", "sha256": "0" * 64},
+        ]})
+        self.assertEqual(len(result["unsafe"]), 3)
+        self.assertEqual(result["scanned_bytes"], 0)
+
+    def test_upgrade_backs_up_runtime_config_and_owned_bridge(self) -> None:
+        self.init()
+        state = self.root / ".agent-relay"
+        runtime = state / "relay.py"
+        config_path = state / "config.json"
+        config = json.loads(config_path.read_text())
+        legacy_source = runtime.read_text() + "\n# Previous release fixture.\n"
+        runtime.write_text(legacy_source)
+        config["runtime_sha256"] = hashlib.sha256(runtime.read_bytes()).hexdigest()
+        bridge_relative = ".agents/skills/agent-relay/SKILL.md"
+        bridge = self.root / bridge_relative
+        bridge.write_text("# Previous owned bridge\n")
+        config["managed_files"][bridge_relative]["sha256"] = hashlib.sha256(bridge.read_bytes()).hexdigest()
+        config_path.write_text(json.dumps(config))
+        config_before = config_path.read_bytes()
+        goals_before = (state / "goals.json").read_bytes()
+        self.init()
+        self.assertEqual(runtime.read_bytes(), SOURCE_RUNTIME.read_bytes())
+        self.assertIn("Agent Relay project bridge", bridge.read_text())
+        backups = list((state / "backups").rglob("relay.py"))
+        self.assertEqual(len(backups), 1)
+        self.assertEqual(backups[0].read_text(), legacy_source)
+        self.assertIn(config_before, [path.read_bytes() for path in (state / "backups").rglob("config.json")])
+        self.assertEqual((state / "goals.json").read_bytes(), goals_before)
+        config = json.loads(config_path.read_text())
+        self.assertTrue(config["managed_files"]["AGENTS.md"]["created"])
+        self.json_output("uninstall", "--yes")
+        self.assertFalse((self.root / "AGENTS.md").exists())
+
+    def test_upgrade_and_uninstall_preserve_edited_runtime(self) -> None:
+        self.init()
+        runtime = self.root / ".agent-relay/relay.py"
+        runtime.write_text(runtime.read_text() + "\n# User custom behavior.\n")
+        before = self.state_hash()
+        plan = self.json_output("init", "--project-root", str(self.root), "--dry-run",
+                                "--adapters", "minimal", installed=False)
+        self.assertEqual(next(item for item in plan["operations"]
+                              if item["kind"] == "runtime")["action"], "conflict")
+        result = self.run_relay("init", "--project-root", str(self.root),
+                                "--adapters", "minimal", "--yes", check=False)
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(before, self.state_hash())
+        uninstall = self.json_output("uninstall", "--project-root", str(self.root),
+                                     "--yes", installed=False)
+        self.assertTrue(runtime.exists())
+        self.assertIn(".agent-relay/relay.py", [item["path"] for item in uninstall["actions"]
+                                             if item["action"] == "preserved"])
+
+    def test_known_legacy_runtime_can_upgrade_without_ownership_record(self) -> None:
+        self.init()
+        runtime = self.root / ".agent-relay/relay.py"
+        runtime.write_text("# Known legacy runtime fixture\n")
+        previous = runtime.read_bytes()
+        legacy_hash = hashlib.sha256(previous).hexdigest()
+        config_path = self.root / ".agent-relay/config.json"
+        config = json.loads(config_path.read_text())
+        config.pop("runtime_sha256")
+        config["runtime_version"] = "0.1.0"
+        config_path.write_text(json.dumps(config))
+        relay = relay_module.Relay(self.root)
+        with mock.patch.dict(relay_module.KNOWN_RUNTIME_HASHES, {legacy_hash: "0.1.0"}):
+            plan = relay.init_plan("minimal")
+            self.assertEqual(next(item for item in plan["operations"]
+                                  if item["kind"] == "runtime")["action"], "modify")
+            relay.initialize("minimal", False, True, None, None, None, [])
+        self.assertEqual(runtime.read_bytes(), SOURCE_RUNTIME.read_bytes())
+        self.assertIn(previous, [path.read_bytes()
+                                for path in (self.root / ".agent-relay/backups").rglob("relay.py")])
+
+    def test_refresh_preserves_edited_bridge_and_rejects_state_symlinks(self) -> None:
+        self.init()
+        bridge = self.root / ".agents/skills/agent-relay/SKILL.md"
+        bridge.write_text(bridge.read_text() + "\nMy local instructions.\n")
+        before = bridge.read_bytes()
+        self.init()
+        self.assertEqual(bridge.read_bytes(), before)
+        runtime = self.root / ".agent-relay/relay.py"
+        runtime.unlink()
+        runtime.symlink_to(self.root / "missing-runtime.py")
+        result = self.run_relay("init", "--project-root", str(self.root),
+                                "--yes", check=False)
+        self.assertEqual(result.returncode, 1)
+        self.assertTrue(runtime.is_symlink())
+        self.assertFalse((self.root / "missing-runtime.py").exists())
+
+    def test_fleet_is_read_only_and_never_executes_project_runtime(self) -> None:
+        self.init()
+        task = self.json_output("start", "--title", "Blocked")
+        self.json_output("finish", "--task-id", task["id"], "--status", "blocked",
+                         "--result", "Waiting")
+        runtime = self.root / ".agent-relay/relay.py"
+        runtime.write_text("from pathlib import Path\nPath('executed.txt').touch()\n")
+        before = self.state_hash()
+        result = subprocess.run([sys.executable, str(FLEET), "--project", str(self.root),
+                                 "--json"], check=True, capture_output=True, text=True)
+        row = json.loads(result.stdout)[0]
+        self.assertEqual(row["blocked_tasks"], 1)
+        self.assertEqual(row["doctor_health"], "warning")
+        self.assertEqual(before, self.state_hash())
+        self.assertFalse((self.root / "executed.txt").exists())
+        self.assertFalse((self.root / ".agent-relay/__pycache__").exists())
+
+    def test_fleet_scans_only_immediate_children_and_reports_missing_explicit_path(self) -> None:
+        self.init()
+        child = self.root / "nested" / "project"
+        child.mkdir(parents=True)
+        self.run_relay("init", "--project-root", str(child), "--adapters", "minimal", "--yes")
+        result = subprocess.run([sys.executable, str(FLEET), "--root", str(self.root),
+                                 "--project", str(self.root / "missing"), "--json"],
+                                check=True, capture_output=True, text=True)
+        rows = json.loads(result.stdout)
+        self.assertEqual(len(rows), 2)
+        self.assertNotIn(str(child), [item["path"] for item in rows])
+        self.assertEqual(next(item for item in rows if item["project"] == "missing")["health"],
+                         "uninitialized")
+
+    def test_report_schema_declares_new_version_fields(self) -> None:
+        self.init()
+        report = self.json_output("report")
+        schema = json.loads((SKILL.parent / "assets/report.schema.json").read_text())
+        self.assertTrue(set(report["version_state"]).issubset(
+            schema["properties"]["version_state"]["properties"]))
 
 
 if __name__ == "__main__":

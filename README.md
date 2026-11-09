@@ -72,7 +72,7 @@ Agent 将自然语言意图转换为项目内操作。历史目标只提供上�
 | 希望项目自己长期保留交接能力 | 希望项目指令绕过系统、组织或用户权限策略 |
 
 > [!NOTE]
-> **当前正式版本：`v0.1.0`。** Skill、项目初始化器和 Python 标准库运行时已经可用。CI 覆盖 Python 3.9、3.11 和 3.13；直接适配器可以生成并由 `doctor` 校验，但封闭产品是否在真实会话中加载入口仍按兼容等级分别标注。
+> **当前正式版本：`v0.1.1`。** 本次修正阻塞任务、目标排序和租约检查，增加封存文件差异、升级保护与只读多项目盘点，保持 Schema 1。CI 覆盖 Python 3.9、3.11 和 3.13；适配器生成测试不等于所有封闭产品的真实会话验证。
 
 ## 它解决什么问题
 
@@ -172,7 +172,7 @@ gh skill install chopperH0824/agent-relay agent-relay --scope user
 可用发布标签固定供应链版本：
 
 ```bash
-gh skill install chopperH0824/agent-relay agent-relay@v0.1.0 --scope user
+gh skill install chopperH0824/agent-relay agent-relay@v0.1.1 --scope user
 ```
 
 `npx skills` 是第三方安装工具并包含匿名遥测；可用 `DO_NOT_TRACK=1` 关闭。`gh skill` 需要 GitHub CLI 2.90.0+，当前仍是 preview 功能。安装前请审查 [`SKILL.md`](./skills/agent-relay/SKILL.md) 和运行脚本。
@@ -199,6 +199,14 @@ Agent 会按固定安全顺序执行：
 
 初始化是幂等的：重复启用会更新同一个受管块，不会追加副本。已有文件在修改前备份；符号链接、项目外路径和现有非 Relay Skill 不会被覆盖。
 
+### 更新已有项目
+
+更新全局 Skill 不会自动改动已有项目的运行时。对 Agent 说：
+
+> **把这个项目的 Agent Relay 更新到新版，保留现有适配范围和历史记录，先预览差异。**
+
+Agent 使用新版安装器预览并确认后刷新。运行时必须匹配已记录校验值或已知的旧版源码；本地手改内容会阻止覆盖。升级前备份运行时、配置、交接文件与变更的适配文件；未手改的项目桥接入口会一起更新。不会批量改其他项目。
+
 ## 初始化后怎么用
 
 继续像平常一样描述任务，不需要主动调用 Relay 生命周期命令。例如：
@@ -219,15 +227,17 @@ Agent 会按固定安全顺序执行：
 
 需要更多信息时说 **“给我完整状态”**；需要机器可读结果时说 **“用 JSON 汇报 Agent Relay 状态”**。Agent 会调用只读报告，不会认领任务、刷新租约、创建事件或改写 `HANDOFF.md`。
 
-默认汇报固定为 10 行左右：
+默认汇报为简短状态摘要：
 
 ```text
 Agent Relay report
 Health: healthy
-Project goal: 发布 v0.1.0
+Project goal: 发布 v0.1.1
 Active work: task-id · owner · docs/**
+Blocked work: None
 Last completed: 安装器和运行时测试通过
-Version state: v001; unsealed changes: 2; storage: 18.4 KB
+Completion caveats: None
+Version state: v001; unsealed changes: 2 (git); storage: 18.4 KB
 Environment: Pi · gpt-5.6 · shell, browser
 Blockers: None
 Next step: 创建 GitHub Release
@@ -242,6 +252,14 @@ Updated: 2026-08-28T09:00:00Z · event-id
 | `uninitialized` | 当前项目没有有效初始化 |
 
 机器接口遵循 [`report.schema.json`](./skills/agent-relay/assets/report.schema.json)。
+
+阻塞/取消任务不会进入“最近完成”。摘要优先显示最近更新的明确目标，不把候选目标当作用户承诺。`doctor` 会警告过期租约，但这些检查都不能替代项目验收、冻结约定或线上状态验证。
+
+非 Git 项目可对比最新封存清单里的文件，并区分修改、缺失和未能检查；新文件和未封存文件不在比较范围内。Git 工作区变化与封存文件差异分别呈现。详情见[报告语义与覆盖范围](./skills/agent-relay/references/PROTOCOL.md#status-semantics)。
+
+### 多项目盘点
+
+对 Agent 说“只读检查这些本地项目的 Relay 状态”。安装器提供 `scripts/fleet_report.py`，支持重复传入 `--project` 或 `--root`；后者只检查指定目录及其直接子目录，不递归扫描家目录、不初始化项目、不执行各项目的运行脚本。
 
 ## 目标与动作
 
@@ -300,7 +318,7 @@ Agent 只有在完整语义明确表示“现在定版/立即交付”时才执�
 
 > **卸载 Agent Relay。先预览，移除它添加的项目入口和运行时，保留目标、事件、版本和备份；说明会删除和保留什么，等我确认后执行。**
 
-确认后，Agent 会删除 Relay 受管块、未被修改的 owned adapter 和项目内运行时。用户修改过的 adapter 会保留并单独报告，避免误删。
+确认后，Agent 会删除 Relay 受管块、未被修改的 owned adapter 和未被修改的项目内运行时。用户修改过的适配文件或运行时会保留并单独报告，避免误删。
 
 ### 恢复到未安装 Relay 的结构
 
@@ -455,6 +473,9 @@ Agent Relay 默认不会：
 - 任务租约、过期处理和写范围冲突；
 - `report` 状态文件零变化；
 - 目标生命周期；
+- 阻塞与完成分离、完成备注、明确目标排序、租约过期警告；
+- Git/非 Git 封存差异、只读盘点、读取范围与未知结果；
+- 升级备份、旧桥接更新和本地手改文件保护；
 - 秘密脱敏和 doctor 扫描；
 - artifact 封版、SHA-256 与篡改检测；
 - 安全卸载和显式 purge；

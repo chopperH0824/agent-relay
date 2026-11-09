@@ -42,7 +42,13 @@ Instruction files are updated only through one bounded block:
 
 Existing files are copied under `.agent-relay/backups/<timestamp>/` before modification. Reinitialization replaces the existing managed block instead of appending another one.
 
-Owned adapter files are removed during uninstall only when their content hash still matches Agent Relay's record. Locally edited adapters are preserved.
+Owned adapter files are refreshed or removed only when their content hash still matches Agent Relay's record. Locally edited adapters are preserved. Runtime refresh/uninstall uses the same ownership rule, with a small allowlist for published pre-checksum revisions. Unknown runtime edits stop a refresh before writes. Approved refreshes back up the previous runtime, config, and handoff as well as changed adapters.
+
+## Read-only audits
+
+The fleet helper imports the trusted Skill runtime instead of executing project-local scripts. It only discovers the approved root and immediate children; explicit missing paths are reported rather than silently omitted. It refuses symlink scan roots and unsafe state paths. Git status disables filesystem-monitor hooks and optional index writes. Reports are printed locally, not persisted or uploaded.
+
+Artifact-drift reads follow only the latest seal's selected regular files, reject symlink path components and Relay/Git internal paths, and have a 100 MiB report budget. Failed or skipped comparisons remain unknown. Doctor separately hashes sealed copies and may take longer on large histories. These are local filesystem safeguards, not protection against a malicious process concurrently replacing files during a command.
 
 ## Versions
 

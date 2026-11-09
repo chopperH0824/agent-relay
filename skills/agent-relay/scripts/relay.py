@@ -13,6 +13,7 @@ import os
 import platform
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -22,12 +23,20 @@ from pathlib import Path, PurePosixPath
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 
-VERSION = "0.1.0"
+VERSION = "0.1.1"
 SCHEMA_VERSION = 1
 STATE_DIR_NAME = ".agent-relay"
 MANAGED_START = "<!-- agent-relay:start -->"
 MANAGED_END = "<!-- agent-relay:end -->"
 LOCK_STALE_SECONDS = 120
+REPORT_ARTIFACT_MAX_BYTES = 100 * 1024 * 1024
+
+# Published v0.1.0 and the subsequent uninstall-guidance revision predate
+# runtime ownership hashes. Unknown legacy bytes require manual review.
+KNOWN_RUNTIME_HASHES = {
+    "eb266db70fa679f89957cbf5fa77d9880ee4d27046fd6afb87d8f22425931ab2": "0.1.0",
+    "8052e2b282a453d4ea8a0010c23d9c7fe4e49b804a863112f2b3df872d5c35dc": "0.1.0",
+}
 
 SECRET_KEY_RE = re.compile(
     r"(?i)(?:^|[_-])(token|secret|password|passwd|cookie|private[_-]?key|"
@@ -63,8 +72,9 @@ def parse_time(value: Optional[str]) -> Optional[dt.datetime]:
     if not value:
         return None
     try:
-        return dt.datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except (TypeError, ValueError):
+        parsed = dt.datetime.fromisoformat(value.replace("Z", "+00:00"))
+        return parsed if parsed.tzinfo else parsed.replace(tzinfo=dt.timezone.utc)
+    except (AttributeError, TypeError, ValueError):
         return None
 
 
@@ -87,6 +97,29 @@ def sha256_file(path: Path) -> str:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def file_sha256_or_none(path: Path) -> Optional[str]:
+    try:
+        if path.is_symlink() or not path.is_file():
+            return None
+        return sha256_file(path)
+    except OSError:
+        return None
+
+
+def bounded_sha256(path: Path, limit: int) -> Tuple[str, int]:
+    digest = hashlib.sha256()
+    total = 0
+    with path.open("rb") as handle:
+        while True:
+            chunk = handle.read(min(1024 * 1024, limit - total + 1))
+            total += len(chunk)
+            if total > limit:
+                raise RelayError("File exceeds the report read budget")
+            if not chunk:
+                return digest.hexdigest(), total
+            digest.update(chunk)
 
 
 def redact_string(value: str) -> str:
@@ -197,6 +230,16 @@ def project_member(root: Path, value: str) -> Path:
     path = root.joinpath(*pure.parts)
     parent = path.parent if path.parent.exists() else nearest_existing(path.parent)
     relative_path(root, parent)
+    return path
+
+
+def no_symlink_member(root: Path, value: str) -> Path:
+    path = project_member(root, value)
+    current = root
+    for part in path.relative_to(root).parts:
+        current = current / part
+        if current.is_symlink():
+            raise RelayError("Refusing symlink path: %s" % value)
     return path
 
 
@@ -318,8 +361,10 @@ The user's current explicit request always has priority over stored goals.
 Before substantive work:
 
 1. Read `.agent-relay/HANDOFF.md`.
-2. Run `python3 .agent-relay/relay.py report` for a read-only health summary.
-3. Before editing, run `python3 .agent-relay/relay.py start --title "<task>" --scope "<path-or-glob>"` for each planned write scope.
+2. Run `python3 .agent-relay/relay.py report` for the current work, blockers, goals, and version drift.
+3. Run `python3 .agent-relay/relay.py doctor` when checking structural integrity or lease freshness.
+4. Treat blocked work and completion caveats as unresolved context; do not describe a blocked task as completed.
+5. Before editing, run `python3 .agent-relay/relay.py start --title "<task>" --scope "<path-or-glob>"` for each planned write scope.
 
 During and after work:
 
@@ -331,6 +376,9 @@ During and after work:
 - When the user clearly requests a final version or immediate delivery, run `seal` for the explicit artifact scope. Ask when finalization scope is ambiguous.
 - When the user asks to uninstall Agent Relay, preview the removal and preserve history by default. A complete restore requires separate explicit confirmation before purging `.agent-relay/` and removing the installed Skill; never force-delete locally modified adapters.
 - Respect active write-scope conflicts. Split work, wait, or use a separate Git worktree instead of bypassing a live lease.
+- When a lease is expired, do not edit the old task file. Start a replacement task; the runtime records the old task as expired.
+- Read referenced project decisions, freeze rules, and delivery evidence. A healthy Relay record is not proof of product completion, approval, deployment, or the current state of a browser/service.
+- `report` and `doctor` are read-only. Artifact comparisons outside Git cover only the latest sealed files and label unsafe or unreadable paths unknown.
 """
 
 GITIGNORE_BODY = """
@@ -345,23 +393,25 @@ PROJECT_SKILL = """---
 name: agent-relay
 description: Maintains durable project handoff, goal, task, status, environment, and sealed-version state. Use whenever entering a project containing .agent-relay, before substantive edits, when reporting progress, handing work to another agent, finalizing a deliverable, or uninstalling and restoring Agent Relay.
 license: MIT
-compatibility: Requires Python 3.9 or newer in the project environment.
 metadata:
   author: chopperH0824
-  version: \"0.1.0\"
+  version: \"0.1.1\"
 ---
 
 # Agent Relay project bridge
 
-Treat `.agent-relay/` at the project root as the canonical state. The current user request overrides stored goals.
+Requires Python 3.9 or newer. Treat `.agent-relay/` at the project root as the canonical state. The current user request overrides stored goals.
 
 1. Read `.agent-relay/HANDOFF.md` and run `python3 .agent-relay/relay.py report` when entering the project.
-2. Run `start` before substantive writes, declaring every intended project-relative path or glob with `--scope`. Include safe harness, model, and capability names when known; never include configuration values.
-3. Use `checkpoint` during long work and `finish` with the result, changed paths, verification, blockers, and next step.
-4. Run `report` for status questions. It is read-only.
-5. Run `seal --yes` only when finalization and artifact scope are explicit; otherwise ask.
-6. For uninstall requests, preview and preserve Relay history by default. A complete restore requires explicit confirmation before permanent history deletion and installer-Skill removal. Preserve locally modified adapters.
-7. Never write secrets, full conversations, or hidden model reasoning to Relay state.
+2. Run `doctor` when checking structural integrity or lease freshness; `report` is the project freshness and handoff summary.
+3. Treat blocked work and completion caveats as unresolved context; do not describe a blocked task as completed.
+4. Run `start` before substantive writes, declaring every intended project-relative path or glob with `--scope`. Include safe harness, model, and capability names when known; never include configuration values.
+5. Use `checkpoint` during long work and `finish` with the result, changed paths, verification, blockers, and next step.
+6. Run `seal --yes` only when finalization and artifact scope are explicit; otherwise ask.
+7. For uninstall requests, preview and preserve Relay history by default. A complete restore requires explicit confirmation before permanent history deletion and installer-Skill removal. Preserve locally modified adapters.
+8. Never write secrets, full conversations, or hidden model reasoning to Relay state.
+
+`report` and `doctor` are read-only. Follow referenced project decisions and freeze rules; Relay health does not prove delivery or external-service state.
 
 Run `python3 .agent-relay/relay.py --help` for command details.
 """
@@ -412,7 +462,7 @@ ADAPTER_SKILL_PATHS = {
 class Relay:
     def __init__(self, root: Path) -> None:
         self.root = root.resolve()
-        self.state = self.root / STATE_DIR_NAME
+        self.state = no_symlink_member(self.root, STATE_DIR_NAME)
         self.config_path = self.state / "config.json"
         self.goals_path = self.state / "goals.json"
         self.handoff_path = self.state / "HANDOFF.md"
@@ -424,6 +474,9 @@ class Relay:
         self.lock_path = self.state / "runtime" / "state.lock"
 
     def require_initialized(self) -> Dict[str, Any]:
+        for relative in ("config.json", "goals.json", "HANDOFF.md", "tasks", "events",
+                         "versions", "environments/shared", "runtime"):
+            no_symlink_member(self.root, "%s/%s" % (STATE_DIR_NAME, relative))
         if not self.config_path.exists():
             raise RelayError(
                 "Agent Relay is not initialized in %s. Run init --dry-run first." % self.root
@@ -469,9 +522,10 @@ class Relay:
         return specs
 
     def _classify_adapter(self, relative: str, mode: str, body: str) -> Dict[str, Any]:
-        path = self.root / relative
-        if path.is_symlink():
-            return {"path": relative, "action": "skip", "reason": "existing symlink"}
+        try:
+            path = no_symlink_member(self.root, relative)
+        except RelayError as exc:
+            return {"path": relative, "action": "skip", "reason": str(exc)}
         existing = path.read_text(encoding="utf-8") if path.exists() else ""
         if mode == "block":
             desired = merge_managed_block(existing, body)
@@ -482,21 +536,66 @@ class Relay:
             action = "create"
         elif existing == desired:
             action = "unchanged"
-        elif "name: agent-relay" in existing or MANAGED_START in existing:
-            return {
-                "path": relative,
-                "action": "skip",
-                "reason": "existing Agent Relay installation retained",
-            }
         else:
-            return {
-                "path": relative,
-                "action": "skip",
-                "reason": "existing non-Relay file retained",
-            }
+            config = load_json(self.config_path, {})
+            record = config.get("managed_files", {}).get(relative, {})
+            if (record.get("mode") == "owned"
+                    and sha256_bytes(existing.encode("utf-8")) == record.get("sha256")):
+                action = "modify"
+            else:
+                return {
+                    "path": relative,
+                    "action": "skip",
+                    "reason": "locally edited or unowned file retained",
+                }
         return {"path": relative, "action": action, "mode": mode, "desired": desired}
 
+    def _runtime_source(self) -> Tuple[str, str]:
+        source = Path(__file__).read_text(encoding="utf-8")
+        return source, sha256_bytes(source.encode("utf-8"))
+
+    def _runtime_plan(self, source_hash: str) -> Dict[str, Any]:
+        if self.runtime_path.is_symlink():
+            return {
+                "action": "conflict",
+                "reason": "project-local runtime is a symlink",
+                "current_sha256": None,
+            }
+        if not self.runtime_path.exists():
+            return {"action": "create", "current_sha256": None}
+        current_hash = file_sha256_or_none(self.runtime_path)
+        if current_hash == source_hash:
+            return {"action": "unchanged", "current_sha256": current_hash}
+        config = load_json(self.config_path, {})
+        recorded_hash = config.get("runtime_sha256") if isinstance(config, dict) else None
+        known_legacy = current_hash in KNOWN_RUNTIME_HASHES
+        owned_runtime = bool(recorded_hash and recorded_hash == current_hash)
+        if known_legacy or owned_runtime:
+            return {
+                "action": "modify",
+                "reason": (
+                    "upgrade from Agent Relay %s"
+                    % KNOWN_RUNTIME_HASHES.get(current_hash, "the recorded runtime")
+                ),
+                "current_sha256": current_hash,
+            }
+        return {
+            "action": "conflict",
+            "reason": "project-local runtime has unrecorded local edits; preserved",
+            "current_sha256": current_hash,
+        }
+
     def init_plan(self, adapters: str) -> Dict[str, Any]:
+        previous = load_json(no_symlink_member(self.root, ".agent-relay/config.json"), {})
+        if not isinstance(previous, dict):
+            raise RelayError("Existing config.json is not an object")
+        if previous and previous.get("schema_version") != SCHEMA_VERSION:
+            raise RelayError("Unsupported config schema; refusing to downgrade state")
+        if not isinstance(previous.get("managed_files", {}), dict):
+            raise RelayError("config managed_files must be an object")
+        if any(not isinstance(record, dict)
+               for record in previous.get("managed_files", {}).values()):
+            raise RelayError("Invalid managed file record")
         operations = []
         directories = [
             "tasks",
@@ -509,7 +608,7 @@ class Relay:
             "integrations/workbuddy",
         ]
         for relative in directories:
-            path = self.state / relative
+            path = no_symlink_member(self.root, "%s/%s" % (STATE_DIR_NAME, relative))
             operations.append(
                 {
                     "path": "%s/%s/" % (STATE_DIR_NAME, relative),
@@ -517,17 +616,16 @@ class Relay:
                     "kind": "directory",
                 }
             )
-        source = Path(__file__).read_text(encoding="utf-8")
-        runtime_action = "create"
-        if self.runtime_path.exists():
-            runtime_action = (
-                "unchanged"
-                if self.runtime_path.read_text(encoding="utf-8") == source
-                else "modify"
-            )
+        _, source_hash = self._runtime_source()
+        runtime = self._runtime_plan(source_hash)
         operations.extend(
             [
-                {"path": "%s/relay.py" % STATE_DIR_NAME, "action": runtime_action, "kind": "runtime"},
+                {
+                    "path": "%s/relay.py" % STATE_DIR_NAME,
+                    "action": runtime["action"],
+                    "reason": runtime.get("reason"),
+                    "kind": "runtime",
+                },
                 {"path": "%s/config.json" % STATE_DIR_NAME, "action": "modify" if self.config_path.exists() else "create", "kind": "state"},
                 {"path": "%s/goals.json" % STATE_DIR_NAME, "action": "unchanged" if self.goals_path.exists() else "create", "kind": "state"},
                 {"path": "%s/HANDOFF.md" % STATE_DIR_NAME, "action": "modify" if self.handoff_path.exists() else "create", "kind": "state"},
@@ -543,9 +641,13 @@ class Relay:
             item.update({"kind": "adapter", "adapter": name})
             item.pop("desired", None)
             operations.append(item)
+        for item in operations:
+            if item["action"] not in ("skip", "conflict"):
+                no_symlink_member(self.root, item["path"])
         return {
             "project_root": str(self.root),
             "runtime_version": VERSION,
+            "runtime_sha256": source_hash,
             "adapter_mode": adapters,
             "operations": operations,
             "writes": sum(1 for item in operations if item["action"] in ("create", "modify")),
@@ -574,7 +676,8 @@ class Relay:
             return info, None
         path = self.root / relative
         desired = info.pop("desired")
-        created = not path.exists()
+        previous = load_json(self.config_path, {}).get("managed_files", {}).get(relative, {})
+        created = previous.get("created", not path.exists())
         backup = None
         if info["action"] == "modify":
             backup = self._backup(path, stamp)
@@ -589,14 +692,19 @@ class Relay:
         }
         if backup:
             record["backup"] = backup
+        elif previous.get("backup"):
+            record["backup"] = previous["backup"]
         return info, record
 
     def _base_config(self, existing: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         now = iso_now()
         existing = existing or {}
+        _, source_hash = self._runtime_source()
         return {
+            **existing,
             "schema_version": SCHEMA_VERSION,
             "runtime_version": VERSION,
+            "runtime_sha256": source_hash,
             "project_id": existing.get("project_id") or str(uuid.uuid4()),
             "created_at": existing.get("created_at") or now,
             "updated_at": now,
@@ -630,6 +738,9 @@ class Relay:
             raise RelayError("Initialization requires --yes after reviewing init --dry-run")
         if self.root == Path.home().resolve():
             raise RelayError("Refusing to initialize the home directory as a project")
+        conflicts = [item for item in plan["operations"] if item["action"] == "conflict"]
+        if conflicts:
+            raise RelayError("Initialization conflict: %s" % conflicts[0].get("reason"))
 
         for relative in (
             "tasks",
@@ -649,16 +760,36 @@ class Relay:
                 raise RelayError("Existing config.json is not an object")
             config = self._base_config(previous)
             first_install = not bool(previous)
-            stamp = utc_now().strftime("%Y%m%dT%H%M%SZ")
+            stamp = utc_now().strftime("%Y%m%dT%H%M%S%fZ")
             managed = dict(config.get("managed_files", {}))
             installed_adapters = {item.get("path"): item for item in config.get("adapters", []) if item.get("path")}
             actions = []
 
-            source = Path(__file__).read_text(encoding="utf-8")
-            if not self.runtime_path.exists() or self.runtime_path.read_text(encoding="utf-8") != source:
+            source, source_hash = self._runtime_source()
+            runtime_plan = self._runtime_plan(source_hash)
+            if runtime_plan["action"] == "conflict":
+                raise RelayError(
+                    "Refusing to replace .agent-relay/relay.py: %s. "
+                    "Review or restore the project-local runtime, then retry."
+                    % runtime_plan["reason"]
+                )
+            if previous:
+                self._backup(self.config_path, stamp)
+                self._backup(self.handoff_path, stamp)
+            if runtime_plan["action"] == "modify":
+                runtime_backup = self._backup(self.runtime_path, stamp)
+                atomic_write(self.runtime_path, source, 0o755)
+                actions.append(
+                    {
+                        "path": "%s/relay.py" % STATE_DIR_NAME,
+                        "action": "updated",
+                        "backup": runtime_backup,
+                        "from_sha256": runtime_plan.get("current_sha256"),
+                    }
+                )
+            elif runtime_plan["action"] == "create":
                 atomic_write(self.runtime_path, source, 0o755)
                 actions.append({"path": "%s/relay.py" % STATE_DIR_NAME, "action": "written"})
-
             if not self.goals_path.exists():
                 atomic_write(
                     self.goals_path,
@@ -682,6 +813,7 @@ class Relay:
             config.update(
                 {
                     "runtime_version": VERSION,
+                    "runtime_sha256": source_hash,
                     "updated_at": iso_now(),
                     "installed": True,
                     "adapter_mode": adapters,
@@ -795,7 +927,7 @@ class Relay:
         if not directory.exists():
             return items
         for path in sorted(directory.glob(pattern)):
-            value = load_json(path)
+            value = load_json(no_symlink_member(self.root, path.relative_to(self.root).as_posix()))
             if isinstance(value, dict):
                 items.append(value)
         return items
@@ -811,7 +943,7 @@ class Relay:
         if not self.versions_dir.exists():
             return versions
         for path in sorted(self.versions_dir.glob("v[0-9][0-9][0-9]/manifest.json")):
-            value = load_json(path)
+            value = load_json(no_symlink_member(self.root, path.relative_to(self.root).as_posix()))
             if isinstance(value, dict):
                 versions.append(value)
         return versions
@@ -824,6 +956,33 @@ class Relay:
         if not isinstance(value, dict) or not isinstance(value.get("goals", []), list):
             raise RelayError("Invalid goals.json")
         return value
+
+    @staticmethod
+    def _goal_sort_key(goal: Dict[str, Any], position: int = 0) -> Tuple[int, dt.datetime, int]:
+        updated = parse_time(goal.get("updated_at")) or dt.datetime.min.replace(
+            tzinfo=dt.timezone.utc
+        )
+        explicit = 1 if goal.get("kind") == "explicit" else 0
+        return explicit, updated, position
+
+    def _active_goals(self) -> List[Dict[str, Any]]:
+        goals = [
+            (position, goal)
+            for position, goal in enumerate(self._goals()["goals"])
+            if goal.get("status") == "active"
+        ]
+        return [
+            goal
+            for _, goal in sorted(
+                goals,
+                key=lambda item: self._goal_sort_key(item[1], item[0]),
+                reverse=True,
+            )
+        ]
+
+    def _project_goal(self, goals: Sequence[Dict[str, Any]]) -> str:
+        explicit = next((goal for goal in goals if goal.get("kind") == "explicit"), None)
+        return explicit.get("text", "") if explicit else "No explicit goal recorded"
 
     def _save_config(self, config: Dict[str, Any]) -> None:
         config["updated_at"] = iso_now()
@@ -1094,13 +1253,19 @@ class Relay:
             return {"task": task, "event_id": event["id"]}
 
     def _render_handoff(self, source_event_id: str) -> str:
-        goals = [goal for goal in self._goals()["goals"] if goal.get("status") == "active"]
+        goals = self._active_goals()
         tasks = self._load_tasks()
         active = [task for task in tasks if task.get("status") == "active"]
+        blocked = [task for task in tasks if task.get("status") == "blocked"]
         events = self._load_events()
         versions = self._load_versions()
-        finished = [event for event in events if event.get("type") == "task-finished"]
-        goal_text = goals[0].get("text") if goals else "Not recorded"
+        finished = [
+            event
+            for event in events
+            if event.get("type") == "task-finished"
+            and event.get("status") == "completed"
+        ]
+        goal_text = self._project_goal(goals)
         lines = [
             "# Agent Relay Handoff",
             "",
@@ -1110,9 +1275,19 @@ class Relay:
             "",
             "- %s" % goal_text,
             "",
-            "## Active tasks",
-            "",
         ]
+        if goals:
+            lines.extend(["## Active goals", ""])
+            for goal in goals[:8]:
+                lines.append(
+                    "- `%s` · %s · %s"
+                    % (
+                        goal.get("kind", "candidate"),
+                        goal.get("text", ""),
+                        goal.get("scope", "long-term"),
+                    )
+                )
+        lines.extend(["", "## Active tasks", ""])
         if active:
             for task in active[:8]:
                 scopes = ", ".join("`%s`" % item for item in task.get("write_scopes", [])) or "read-only"
@@ -1128,6 +1303,16 @@ class Relay:
                 )
         else:
             lines.append("- None")
+        lines.extend(["", "## Blocked work", ""])
+        if blocked:
+            for task in blocked[:8]:
+                blockers = "; ".join(task.get("blockers", [])) or "blocked without a recorded reason"
+                lines.append(
+                    "- `%s` · %s · %s"
+                    % (task.get("id"), task.get("title"), blockers)
+                )
+        else:
+            lines.append("- None")
         lines.extend(["", "## Last completed", ""])
         if finished:
             last = finished[-1]
@@ -1136,6 +1321,9 @@ class Relay:
             lines.append("- Verification: %s" % verification)
         else:
             lines.append("- No completed task recorded")
+        caveats = (finished[-1].get("blockers", []) if finished else [])
+        lines.extend(["", "## Completion caveats", ""])
+        lines.append("- %s" % ("; ".join(caveats) if caveats else "None"))
         lines.extend(["", "## Version state", ""])
         if versions:
             version = versions[-1]
@@ -1146,7 +1334,7 @@ class Relay:
         else:
             lines.append("- No sealed version")
         blockers = []
-        for task in active:
+        for task in active + blocked:
             blockers.extend(task.get("blockers", []))
             if self._is_expired(task):
                 blockers.append("Expired lease: %s" % task.get("id"))
@@ -1182,6 +1370,76 @@ class Relay:
                     total += path.stat().st_size
         return total
 
+    def _artifact_drift(self, manifest: Dict[str, Any]) -> Dict[str, Any]:
+        changed: List[str] = []
+        missing: List[str] = []
+        unsafe: List[str] = []
+        unknown: List[str] = []
+        scanned_bytes = 0
+        remaining_bytes = REPORT_ARTIFACT_MAX_BYTES
+        artifacts = manifest.get("artifacts", [])
+        if not isinstance(artifacts, list):
+            return {
+                "changed": [],
+                "missing": [],
+                "unsafe": ["invalid-artifacts-list"],
+                "unknown": [],
+                "scanned_bytes": 0,
+                "status": "unknown",
+            }
+        if len(artifacts) > 10000:
+            unknown.append("artifact-list-truncated")
+        for artifact in artifacts[:10000]:
+            if not isinstance(artifact, dict):
+                unsafe.append("invalid-artifact-record")
+                continue
+            relative = artifact.get("path")
+            if not isinstance(relative, str) or not relative:
+                unsafe.append("invalid-artifact-path")
+                continue
+            expected = artifact.get("sha256")
+            if not isinstance(expected, str) or not re.fullmatch(r"[0-9a-f]{64}", expected):
+                unsafe.append(relative)
+                continue
+            try:
+                path = no_symlink_member(self.root, relative)
+            except RelayError:
+                unsafe.append(relative)
+                continue
+            parts = PurePosixPath(relative.replace("\\", "/")).parts
+            if ".git" in parts or STATE_DIR_NAME in parts:
+                unsafe.append(relative)
+                continue
+            try:
+                info = path.stat()
+                if not stat.S_ISREG(info.st_mode):
+                    unsafe.append(relative)
+                    continue
+                size = info.st_size
+                if size > remaining_bytes:
+                    unknown.append(relative)
+                    continue
+                actual, size = bounded_sha256(path, remaining_bytes)
+                scanned_bytes += size
+                remaining_bytes -= size
+            except FileNotFoundError:
+                missing.append(relative)
+                continue
+            except (OSError, RelayError):
+                unknown.append(relative)
+                remaining_bytes = 0
+                continue
+            if actual != expected:
+                changed.append(relative)
+        return {
+            "changed": sorted(set(changed)),
+            "missing": sorted(set(missing)),
+            "unsafe": sorted(set(unsafe)),
+            "unknown": sorted(set(unknown)),
+            "scanned_bytes": scanned_bytes,
+            "status": "unknown" if unsafe or unknown else "complete",
+        }
+
     def report_data(self) -> Dict[str, Any]:
         if not self.config_path.exists():
             return {
@@ -1191,7 +1449,7 @@ class Relay:
                 "project_goal": "Not recorded",
                 "active_work": [],
                 "last_completed": None,
-                "version_state": {"latest": None, "unsealed_changes": "unknown", "storage_bytes": 0},
+                "version_state": {"latest": None, "unsealed_changes": "unknown", "drift_basis": "unknown", "storage_bytes": 0, "artifact_drift": None},
                 "environment": None,
                 "blockers": ["Agent Relay is not initialized"],
                 "next_step": "Run init --dry-run",
@@ -1203,7 +1461,7 @@ class Relay:
         stale = []
         try:
             config = self.require_initialized()
-            goals = [goal for goal in self._goals()["goals"] if goal.get("status") == "active"]
+            goals = self._active_goals()
             tasks = self._load_tasks()
             events = self._load_events()
             versions = self._load_versions()
@@ -1215,7 +1473,7 @@ class Relay:
                 "project_goal": "Unknown",
                 "active_work": [],
                 "last_completed": None,
-                "version_state": {"latest": None, "unsealed_changes": "unknown", "storage_bytes": 0},
+                "version_state": {"latest": None, "unsealed_changes": "unknown", "drift_basis": "unknown", "storage_bytes": 0, "artifact_drift": None},
                 "environment": None,
                 "blockers": [str(exc)],
                 "next_step": "Run doctor and repair invalid state",
@@ -1224,6 +1482,7 @@ class Relay:
                 "issues": [str(exc)],
             }
         active = [task for task in tasks if task.get("status") == "active"]
+        blocked = [task for task in tasks if task.get("status") == "blocked"]
         for task in active:
             if self._is_expired(task):
                 stale.append("expired lease: %s" % task.get("id"))
@@ -1234,9 +1493,10 @@ class Relay:
             issues.append("missing AGENTS.md managed entry")
         else:
             try:
+                no_symlink_member(self.root, "AGENTS.md")
                 if MANAGED_START not in agents_path.read_text(encoding="utf-8"):
                     issues.append("missing AGENTS.md managed entry")
-            except (OSError, UnicodeDecodeError):
+            except (OSError, UnicodeDecodeError, RelayError):
                 issues.append("unreadable AGENTS.md")
         latest_event = events[-1] if events else None
         if latest_event and self.handoff_path.exists():
@@ -1244,10 +1504,40 @@ class Relay:
             handoff_time = dt.datetime.fromtimestamp(self.handoff_path.stat().st_mtime, dt.timezone.utc)
             if event_time and handoff_time + dt.timedelta(seconds=1) < event_time:
                 stale.append("HANDOFF.md is older than the latest event")
-        finished = [event for event in events if event.get("type") == "task-finished"]
+        finished = [
+            event
+            for event in events
+            if event.get("type") == "task-finished"
+            and event.get("status") == "completed"
+        ]
+        blocked_events = [
+            event
+            for event in events
+            if event.get("type") == "task-finished"
+            and event.get("status") == "blocked"
+        ]
         latest_version = versions[-1] if versions else None
-        git_code, git_output = run_command(["git", "--no-optional-locks", "status", "--porcelain"], self.root)
-        unsealed = len(git_output.splitlines()) if git_code == 0 and git_output else (0 if git_code == 0 else "unknown")
+        git_code, git_output = run_command(
+            ["git", "--no-optional-locks", "-c", "core.fsmonitor=false",
+             "-c", "core.untrackedCache=false", "status", "--porcelain", "--ignore-submodules=all"],
+            self.root,
+        )
+        artifact_drift = (
+            self._artifact_drift(latest_version)
+            if latest_version and latest_version.get("artifacts") else None
+        )
+        if git_code == 0:
+            unsealed = len(git_output.splitlines()) if git_output else 0
+            drift_basis = "git"
+        elif artifact_drift is not None:
+            unsealed = (
+                len(artifact_drift["changed"]) + len(artifact_drift["missing"])
+                if artifact_drift["status"] == "complete" else "unknown"
+            )
+            drift_basis = "artifact-manifest"
+        else:
+            unsealed = "unknown"
+            drift_basis = "unknown"
         env = None
         env_id = config.get("current_environment")
         if env_id:
@@ -1255,33 +1545,42 @@ class Relay:
                 issues.append("invalid current environment ID")
             else:
                 try:
-                    env = load_json(self.environments_dir / "shared" / (env_id + ".json"), None)
+                    env = load_json(no_symlink_member(
+                        self.root, ".agent-relay/environments/shared/%s.json" % env_id
+                    ), None)
                 except RelayError as exc:
                     env = None
                     issues.append(str(exc))
                 if env is None and not any("environment" in item for item in issues):
                     issues.append("missing current environment snapshot")
         blockers = []
-        for task in active:
+        for task in active + blocked:
             blockers.extend(task.get("blockers", []))
         blockers.extend(stale)
         health = "degraded" if issues else ("stale" if stale else "healthy")
         next_step = next((task.get("next_step") for task in active if task.get("next_step")), None)
         if not next_step and latest_event:
             next_step = latest_event.get("next_step")
+        caveats = finished[-1].get("blockers", []) if finished else []
         return sanitize(
             {
                 "schema_version": SCHEMA_VERSION,
                 "health": health,
+                "runtime_version": config.get("runtime_version"),
                 "project": self.root.name,
-                "project_goal": goals[0].get("text") if goals else "Not recorded",
+                "project_goal": self._project_goal(goals),
                 "goals": goals,
                 "active_work": active,
+                "blocked_work": blocked,
                 "last_completed": finished[-1] if finished else None,
+                "last_blocked": blocked_events[-1] if blocked_events else None,
+                "completion_caveats": caveats,
                 "version_state": {
                     "latest": latest_version,
                     "unsealed_changes": unsealed,
+                    "drift_basis": drift_basis,
                     "storage_bytes": self._version_storage_size(),
+                    "artifact_drift": artifact_drift,
                 },
                 "environment": env,
                 "blockers": blockers,
@@ -1305,11 +1604,13 @@ class Relay:
             work = "None"
         completed = data.get("last_completed") or {}
         completed_text = completed.get("summary") or "None"
+        blocked = data.get("blocked_work") or []
         latest = data.get("version_state", {}).get("latest") or {}
         unsealed = data.get("version_state", {}).get("unsealed_changes")
-        version_text = "%s; unsealed changes: %s; storage: %s" % (
+        version_text = "%s; unsealed changes: %s (%s); storage: %s" % (
             latest.get("version") or "none",
             unsealed,
+            data.get("version_state", {}).get("drift_basis", "unknown"),
             format_bytes(int(data.get("version_state", {}).get("storage_bytes", 0))),
         )
         environment = data.get("environment") or {}
@@ -1323,13 +1624,29 @@ class Relay:
             "Health: %s" % data.get("health"),
             "Project goal: %s" % data.get("project_goal"),
             "Active work: %s" % work,
+            "Blocked work: %s" % (
+                "; ".join(
+                    "%s · %s" % (item.get("id"), item.get("title"))
+                    for item in blocked[:4]
+                )
+                if blocked
+                else "None"
+            ),
             "Last completed: %s" % completed_text,
+            "Completion caveats: %s"
+            % ("; ".join(data.get("completion_caveats", [])) or "None"),
             "Version state: %s" % version_text,
             "Environment: %s" % env_text,
             "Blockers: %s" % ("; ".join(data.get("blockers", [])) or "None"),
             "Next step: %s" % data.get("next_step"),
             "Updated: %s · %s" % (data.get("updated_at") or "unknown", data.get("source_event_id") or "no event"),
         ]
+        drift = data.get("version_state", {}).get("artifact_drift")
+        if drift is not None:
+            lines.insert(8, "Artifact drift (latest seal only): changed=%d; missing=%d; unchecked=%d" % (
+                len(drift["changed"]), len(drift["missing"]),
+                len(drift["unsafe"]) + len(drift["unknown"]),
+            ))
         if full:
             lines.extend(
                 [
@@ -1339,6 +1656,9 @@ class Relay:
                     "",
                     "Active tasks:",
                     json.dumps(active, ensure_ascii=False, indent=2),
+                    "",
+                    "Blocked tasks:",
+                    json.dumps(blocked, ensure_ascii=False, indent=2),
                     "",
                     "Adapters:",
                     json.dumps(data.get("adapters", []), ensure_ascii=False, indent=2),
@@ -1522,6 +1842,8 @@ class Relay:
             add("initialization", "fail", "Missing .agent-relay/config.json")
             return {"health": "uninitialized", "runtime_version": VERSION, "checks": checks}
         try:
+            if self.config_path.is_symlink():
+                raise RelayError("config.json is a symlink")
             config = load_json(self.config_path)
             if not isinstance(config, dict):
                 add("schema", "fail", "config.json must contain an object")
@@ -1546,24 +1868,51 @@ class Relay:
         ]
         missing = [relative_path(self.root, path) for path in required if not path.is_dir()]
         add("state-directories", "fail" if missing else "pass", ", ".join(missing) if missing else "all present")
-        add(
-            "runtime",
-            "pass" if self.runtime_path.exists() else "fail",
-            "project-local relay.py present" if self.runtime_path.exists() else "missing .agent-relay/relay.py",
-        )
+        runtime_hash = file_sha256_or_none(self.runtime_path)
+        expected_hash = config.get("runtime_sha256")
+        if not self.runtime_path.exists():
+            add("runtime", "fail", "missing .agent-relay/relay.py")
+        elif self.runtime_path.is_symlink():
+            add("runtime", "fail", "project-local relay.py is a symlink")
+        elif expected_hash and runtime_hash == expected_hash:
+            add("runtime", "pass", "project-local relay.py matches the recorded runtime")
+        elif runtime_hash in KNOWN_RUNTIME_HASHES:
+            add(
+                "runtime",
+                "warn",
+                "legacy Agent Relay %s runtime; refresh will back it up first"
+                % KNOWN_RUNTIME_HASHES[runtime_hash],
+            )
+        else:
+            add("runtime", "warn", "project-local relay.py has local edits or no ownership record")
         add(
             "handoff",
             "pass" if self.handoff_path.exists() else "fail",
             "HANDOFF.md present" if self.handoff_path.exists() else "missing HANDOFF.md",
         )
         try:
+            self.require_initialized()
             self._goals()
-            self._load_tasks()
+            tasks = self._load_tasks()
             self._load_events()
-            self._load_versions()
+            versions = self._load_versions()
             add("state-json", "pass", "canonical JSON files parse")
         except RelayError as exc:
             add("state-json", "fail", str(exc))
+            tasks = []
+            versions = []
+
+        expired_active = [task for task in tasks if self._is_expired(task)]
+        add(
+            "lease-freshness",
+            "warn" if expired_active else "pass",
+            (
+                "expired active lease(s): %s"
+                % ", ".join(task.get("id", "unknown") for task in expired_active)
+                if expired_active
+                else "no expired active lease"
+            ),
+        )
 
         managed_files = config.get("managed_files", {})
         if not isinstance(managed_files, dict):
@@ -1574,7 +1923,7 @@ class Relay:
                 add("adapter:%s" % relative, "fail", "managed file record must be an object")
                 continue
             try:
-                path = project_member(self.root, relative)
+                path = no_symlink_member(self.root, relative)
             except RelayError as exc:
                 add("adapter:%s" % relative, "fail", str(exc))
                 continue
@@ -1598,7 +1947,7 @@ class Relay:
                 add("adapter:%s" % relative, "pass" if okay else "warn", "owned adapter unchanged" if okay else "owned adapter has local edits")
 
         checksum_failures = []
-        for manifest in self._load_versions():
+        for manifest in versions:
             version = manifest.get("version")
             if not isinstance(version, str) or not re.fullmatch(r"v[0-9]{3}", version):
                 checksum_failures.append("invalid-version-field")
@@ -1607,14 +1956,18 @@ class Relay:
             for artifact in manifest.get("artifacts", []):
                 artifact_name = artifact.get("path", "") if isinstance(artifact, dict) else ""
                 try:
-                    path = project_member(artifact_root, artifact_name)
+                    no_symlink_member(self.root, ".agent-relay/versions/%s/artifacts" % version)
+                    path = no_symlink_member(artifact_root, artifact_name)
                     if path.is_symlink():
                         raise RelayError("artifact is a symlink")
                     relative_path(artifact_root, path)
                 except RelayError:
                     checksum_failures.append("%s:%s" % (version, artifact_name or "invalid-path"))
                     continue
-                if not path.exists() or sha256_file(path) != artifact.get("sha256"):
+                expected = artifact.get("sha256")
+                if (not isinstance(expected, str)
+                        or not re.fullmatch(r"[0-9a-f]{64}", expected)
+                        or file_sha256_or_none(path) != expected):
                     checksum_failures.append("%s:%s" % (version, artifact_name))
         add(
             "sealed-versions",
@@ -1628,9 +1981,14 @@ class Relay:
         scan_paths.extend(self.events_dir.glob("*.json"))
         scan_paths.extend((self.environments_dir / "shared").glob("*.json"))
         for path in scan_paths:
-            if not path.exists() or path.stat().st_size > 2 * 1024 * 1024:
+            try:
+                no_symlink_member(self.root, path.relative_to(self.root).as_posix())
+                if not path.is_file() or path.stat().st_size > 2 * 1024 * 1024:
+                    continue
+                text = path.read_text(encoding="utf-8", errors="replace")
+            except (OSError, RelayError):
+                add("secret-scan-path", "warn", "unreadable or unsafe shared state path")
                 continue
-            text = path.read_text(encoding="utf-8", errors="replace")
             if PRIVATE_KEY_RE.search(text) or TOKEN_VALUE_RE.search(text):
                 secret_hits.append(relative_path(self.root, path))
         add(
@@ -1643,6 +2001,8 @@ class Relay:
         return {
             "health": "degraded" if failures else ("warning" if warnings else "healthy"),
             "runtime_version": VERSION,
+            "installed_runtime_version": config.get("runtime_version"),
+            "runtime_sha256": runtime_hash,
             "checks": checks,
             "failures": len(failures),
             "warnings": len(warnings),
@@ -1669,7 +2029,17 @@ class Relay:
                     "exists": path.exists(),
                 }
             )
-        operations.append({"path": "%s/relay.py" % STATE_DIR_NAME, "action": "remove-runtime", "exists": self.runtime_path.exists()})
+        runtime_hash = file_sha256_or_none(self.runtime_path)
+        runtime_owned = runtime_hash in KNOWN_RUNTIME_HASHES or (
+            runtime_hash and runtime_hash == config.get("runtime_sha256")
+        )
+        operations.append(
+            {
+                "path": "%s/relay.py" % STATE_DIR_NAME,
+                "action": "remove-if-unchanged" if runtime_owned else "preserve-local-edits",
+                "exists": self.runtime_path.exists(),
+            }
+        )
         return {
             "project_root": str(self.root),
             "operations": operations,
@@ -1702,7 +2072,7 @@ class Relay:
                     remaining[relative] = record
                     continue
                 try:
-                    path = project_member(self.root, relative)
+                    path = no_symlink_member(self.root, relative)
                 except RelayError as exc:
                     results.append({"path": relative, "action": "preserved", "reason": str(exc)})
                     remaining[relative] = record
@@ -1731,10 +2101,20 @@ class Relay:
                     else:
                         results.append({"path": relative, "action": "preserved", "reason": "local edits"})
                         remaining[relative] = record
+            runtime_hash = file_sha256_or_none(self.runtime_path)
+            runtime_owned = runtime_hash in KNOWN_RUNTIME_HASHES or (
+                runtime_hash and runtime_hash == config.get("runtime_sha256")
+            )
+            if self.runtime_path.exists() or self.runtime_path.is_symlink():
+                results.append({
+                    "path": "%s/relay.py" % STATE_DIR_NAME,
+                    "action": "deleted" if runtime_owned else "preserved",
+                    "reason": "unchanged runtime" if runtime_owned else "local edits or symlink",
+                })
             event = self._write_event_unlocked(
                 "uninstalled",
                 {
-                    "summary": "Removed Agent Relay managed entry points and runtime",
+                    "summary": "Removed unchanged Agent Relay entries; preserved history and local edits",
                     "actions": results,
                     "next_step": "Historical state remains under .agent-relay; use the installer Skill to reinitialize",
                 },
@@ -1745,8 +2125,9 @@ class Relay:
             config["managed_files"] = remaining
             config["updated_at"] = iso_now()
             atomic_write(self.config_path, json_text(config))
-            with contextlib.suppress(FileNotFoundError):
-                self.runtime_path.unlink()
+            if runtime_owned:
+                with contextlib.suppress(FileNotFoundError):
+                    self.runtime_path.unlink()
             return {"dry_run": False, "actions": results, "preserved_state": str(self.state)}
 
     def purge(self, confirmed: bool, confirmation: Optional[str]) -> Dict[str, Any]:

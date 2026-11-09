@@ -2,10 +2,9 @@
 name: agent-relay
 description: Installs and operates durable project-level handoff, goal, task, status, environment, and sealed-version state across AI coding agents. Use when the user asks to install, enable, set up, uninstall, or restore Agent Relay; when entering a Relay-enabled project; when handing work between agents, checking project status, coordinating concurrent edits, or finalizing deliverables.
 license: MIT
-compatibility: Requires Python 3.9 or newer. Writes only inside the user-confirmed project root and does not require network access after installation.
 metadata:
   author: chopperH0824
-  version: "0.1.0"
+  version: "0.1.1"
   homepage: https://github.com/chopperH0824/agent-relay
 ---
 
@@ -36,6 +35,7 @@ Use Python 3.9 or newer. Do not install Python packages; the runtime uses only t
 ## Decide whether to initialize
 
 1. Determine the user-approved target project root. Prefer its Git root; otherwise use the current folder.
+   Respect an existing project opt-out or alternative handoff protocol. A status audit alone does not authorize installing Relay.
 2. If `<project>/.agent-relay/config.json` exists and has `"installed": true`, do not initialize again unless the user asks to repair, update, or change adapters. Follow the existing project's `AGENTS.md` and `.agent-relay/HANDOFF.md` instead.
 3. If Agent Relay is absent, run a dry-run from this Skill directory:
 
@@ -59,6 +59,12 @@ python3 "/absolute/project/path/.agent-relay/relay.py" report
 ```
 
 8. Report every created or modified path, adapter skips, doctor failures, and the first safe next step.
+
+## Update an existing installation
+
+Updating this installer does not update project-local copies. For an explicitly requested project update, run this installer's `init --dry-run --project-root ...` with the project's existing adapter mode, review the plan, then apply the same options with `--yes` within the approved scope. Do not bulk-refresh other projects.
+
+Known legacy runtimes and unchanged recorded runtimes can be upgraded. Unknown or edited runtimes produce a conflict before writes; inspect the difference and preserve local changes instead of bypassing the checksum. Upgrades back up the runtime, config, handoff, and changed adapters. Unchanged owned bridges are refreshed; locally edited ones are retained and reported. Schema remains `1`, with no history rewrite.
 
 ## Choose adapters
 
@@ -84,6 +90,12 @@ python3 .agent-relay/relay.py report
 
 `report` is read-only. It must not create events, claim tasks, refresh leases, or rewrite the handoff.
 
+Read referenced project decisions, freeze rules, and delivery evidence when relevant to the request. Relay health describes record integrity/freshness, not product completion, user approval, deployment, or the live state of a browser or service. Verify external state separately when it matters; report inaccessible evidence as unknown.
+
+Keep `blocked_work`, the last completed result, and `completion_caveats` distinct. A blocked or cancelled task is not completed. Caveats are recorded context, not proof that a problem is still open or has been resolved.
+
+For version comparisons, inspect `drift_basis`: Git entries describe working-tree changes; artifact comparison covers only the latest seal's selected files. An unchanged subset does not establish that the whole project matches the seal, and unchecked files are unknown.
+
 ### Claim work before editing
 
 ```bash
@@ -95,6 +107,8 @@ python3 .agent-relay/relay.py start \
 ```
 
 Declare only intended writes. Read-only work may omit `--scope`. Pass safe harness, model, and capability names with `--harness`, `--model`, and repeated `--capability` when known; never pass configuration values or credentials. If an active lease overlaps, do not bypass it: wait, split the work, coordinate with the owner, or use an isolated Git worktree.
+
+If a lease expired, run `doctor` to inspect it and start a replacement task with the relevant predecessor ID in its operational summary. `start` marks expired active tasks as expired and records their IDs. Do not hand-edit task JSON to renew or complete old work.
 
 ### Save a checkpoint
 
@@ -131,6 +145,19 @@ python3 .agent-relay/relay.py goal update "goal-id" --status completed
 ```
 
 Goals are reminders, not mandates. Never reject the current request because it differs from historical goals.
+
+The summary uses the most recently updated active explicit goal; other active goals remain visible, and candidates are never silently promoted. Do not automatically complete old goals solely to tidy the summary.
+
+### Audit several local projects
+
+Run the trusted installer helper against user-approved paths:
+
+```bash
+python3 scripts/fleet_report.py --root "/absolute/project-parent" --json
+python3 scripts/fleet_report.py --project "/absolute/project" --json
+```
+
+Both options are repeatable. `--root` checks itself and its immediate children only, without recursive home-directory scanning. The helper reads schema-1 state with this Skill's code, does not execute each project's runtime, and does not initialize or refresh projects. It reports the installed version separately from the audit reader's diagnostics. Use the protocol reference for field and coverage details.
 
 ### Seal a final version
 

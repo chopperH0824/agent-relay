@@ -72,7 +72,7 @@ The agent translates intent into project-local operations. Historical goals prov
 | The project itself should retain handoff capability | You expect project rules to bypass system, organization, or user policy |
 
 > [!NOTE]
-> **Current release: `v0.1.0`.** The Skill, initializer, and Python standard-library runtime are usable. CI covers Python 3.9, 3.11, and 3.13. Direct adapters can be generated and checked by `doctor`; whether a closed-source product loads an entry in a live session remains labeled separately by evidence level.
+> **Current release: `v0.1.1`.** This update fixes blocked-task summaries, goal ordering, and lease checks, and adds artifact drift, guarded upgrades, and read-only local project audits while keeping Schema 1. CI covers Python 3.9, 3.11, and 3.13. Adapter generation tests do not establish live-session compatibility with every closed-source harness.
 
 ## What It Solves
 
@@ -172,7 +172,7 @@ gh skill install chopperH0824/agent-relay agent-relay --scope user
 Pin the supply-chain version to a release tag:
 
 ```bash
-gh skill install chopperH0824/agent-relay agent-relay@v0.1.0 --scope user
+gh skill install chopperH0824/agent-relay agent-relay@v0.1.1 --scope user
 ```
 
 `npx skills` is a third-party installer with anonymous telemetry; set `DO_NOT_TRACK=1` to disable it. `gh skill` requires GitHub CLI 2.90.0+ and is currently a preview feature. Review [`SKILL.md`](./skills/agent-relay/SKILL.md) and the runtime before installation.
@@ -199,6 +199,14 @@ Adapter scope can also be requested in natural language:
 
 Initialization is idempotent: enabling it again updates the same managed block instead of appending copies. Existing files are backed up before changes. Symlinks, external paths, and existing non-Relay Skills are not overwritten.
 
+### Update an existing project
+
+Updating the global Skill does not automatically replace project-local runtimes. Tell the agent:
+
+> **Update Agent Relay in this project, preserving its adapter scope and history. Preview the differences first.**
+
+The new installer previews and applies the approved refresh. Runtime bytes must match recorded ownership or a known legacy revision; local edits stop replacement. Runtime, config, handoff, and changed adapters are backed up first. Unmodified owned bridges update too. Other projects are not bulk-refreshed.
+
 ## Daily Use
 
 Continue describing work normally; users do not need to call Relay lifecycle commands. For example:
@@ -219,15 +227,17 @@ Ask the agent directly:
 
 Say **“Give me the full status”** for more detail, or **“Report Agent Relay status as JSON”** for a machine-readable result. The agent calls the read-only report, which does not claim work, renew leases, create events, or rewrite `HANDOFF.md`.
 
-The default report stays near ten lines:
+The default report is a concise status summary:
 
 ```text
 Agent Relay report
 Health: healthy
-Project goal: Publish v0.1.0
+Project goal: Publish v0.1.1
 Active work: task-id · owner · docs/**
+Blocked work: None
 Last completed: Installer and runtime tests passed
-Version state: v001; unsealed changes: 2; storage: 18.4 KB
+Completion caveats: None
+Version state: v001; unsealed changes: 2 (git); storage: 18.4 KB
 Environment: Pi · gpt-5.6 · shell, browser
 Blockers: None
 Next step: Create the GitHub Release
@@ -242,6 +252,14 @@ Updated: 2026-08-28T09:00:00Z · event-id
 | `uninitialized` | No valid initialization exists in the project |
 
 The machine contract follows [`report.schema.json`](./skills/agent-relay/assets/report.schema.json).
+
+Blocked/cancelled work is never counted as the last completion. The summary selects the most recently updated explicit goal, not a candidate. Doctor warns about expired leases. None of these checks replaces acceptance evidence, project freeze rules, or live deployment verification.
+
+Non-Git reports compare files selected in the latest seal and distinguish changed, missing, and unchecked paths. New or unselected files are outside coverage. Git working-tree changes and sealed-artifact drift are separate evidence. See [status semantics and coverage](./skills/agent-relay/references/PROTOCOL.md#status-semantics).
+
+### Audit several projects
+
+Ask the agent to inspect approved local projects read-only. The installer includes `scripts/fleet_report.py` with repeatable `--project` and `--root` options. A root scan covers that directory and immediate children only: no recursive home scan, initialization, or execution of project-local runtimes.
 
 ## Goals and Events
 
@@ -300,7 +318,7 @@ Tell the agent:
 
 > **Uninstall Agent Relay. Preview first; remove its project entries and runtime while preserving goals, events, versions, and backups. Explain every deletion and preservation, then wait for my confirmation.**
 
-After confirmation, the agent removes Relay managed blocks, unchanged owned adapters, and the project runtime. Adapters modified by the user are preserved and reported separately to prevent accidental deletion.
+After confirmation, the agent removes Relay managed blocks, unchanged owned adapters, and the unchanged project runtime. Locally edited adapters and runtimes are preserved and reported separately to prevent accidental deletion.
 
 ### Restore a structure without Relay
 
@@ -455,6 +473,9 @@ Current coverage includes:
 - task leases, expiry, and write-scope conflicts;
 - zero state-file changes from `report`;
 - goal lifecycle;
+- blocked/completed separation, completion caveats, explicit-goal ordering, and expired-lease warnings;
+- Git/non-Git artifact drift, read-only fleet audits, bounded reads, and unknown results;
+- upgrade backups, owned-bridge refresh, and local-edit preservation;
 - secret redaction and doctor scan;
 - artifact sealing, SHA-256, and tamper detection;
 - safe uninstall and explicit purge;
