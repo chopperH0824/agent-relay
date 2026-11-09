@@ -13,7 +13,10 @@ permissions:
 jobs:
   python:
     name: Python ${{ matrix.python-version }}
-    runs-on: ubuntu-latest
+    # ubuntu-latest moved to Ubuntu 26.04, whose image no longer ships a
+    # downloadable CPython 3.9 build. Keep the supported-version matrix
+    # reproducible on the latest runner that provides all three versions.
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
